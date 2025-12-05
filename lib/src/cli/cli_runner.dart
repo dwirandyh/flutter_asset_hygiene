@@ -9,7 +9,7 @@ import '../scanner/asset_scanner.dart';
 import '../utils/file_utils.dart';
 import '../utils/logger.dart';
 
-/// CLI runner for the unused assets scanner
+/// CLI runner for the Flutter Asset Hygiene
 class CliRunner {
   final List<String> arguments;
 
@@ -376,7 +376,7 @@ class CliRunner {
   /// Print usage information
   void _printUsage(ArgParser parser) {
     print('''
-Unused Assets Scanner - Find unused assets in Flutter/Dart projects
+Flutter Asset Hygiene - Find unused assets in Flutter/Dart projects
 
 Usage: dart run unused_assets [options]
 

@@ -24,7 +24,7 @@ class AssetScanner {
     final stopwatch = Stopwatch()..start();
 
     if (!config.silent) {
-      logger.header('Unused Assets Scanner');
+      logger.header('Flutter Asset Hygiene');
       logger.info('Scanning: ${config.rootPath}');
     }
 

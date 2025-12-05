@@ -1,4 +1,4 @@
-/// Configuration for the unused assets scanner
+/// Configuration for the Flutter Asset Hygiene
 class ScanConfig {
   /// The root path to scan
   final String rootPath;
