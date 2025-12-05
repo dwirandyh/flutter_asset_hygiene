@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
+import '../../code_analyzer/auto_fixer.dart';
 import '../../code_analyzer/code_analyzer.dart';
 import '../../models/code_element.dart';
 import '../../models/code_scan_config.dart';
@@ -370,19 +371,51 @@ class UnusedCodeCommand extends Command<int> {
     Logger logger, {
     required bool dryRun,
   }) async {
+    final fixableIssues = result.issues.where((i) => i.canAutoFix).toList();
+    if (fixableIssues.isEmpty) {
+      logger.info('No auto-fixable issues found.');
+      return;
+    }
+
+    final autoFixer = AutoFixer(config: config, logger: logger);
+
     if (dryRun) {
+      final fixResult = await autoFixer.applyFixes(result, dryRun: true);
+      if (fixResult.totalIssues == 0) {
+        logger.info('No auto-fixable issues found.');
+        return;
+      }
+
       logger.header('Fix Dry Run - Would remove:');
-      for (final issue in result.issues) {
-        if (issue.canAutoFix) {
-          logger.plain('  - ${issue.symbol} at ${issue.location}');
+      final files = fixResult.fileIssues;
+      final sortedFiles = files.keys.toList()..sort();
+
+      for (final file in sortedFiles) {
+        final relativePath = p.relative(file, from: config.rootPath);
+        logger.plain('📄 $relativePath');
+        for (final issue in files[file]!) {
+          logger.plain(
+            '  - ${issue.symbol} (${issue.category.name}) at line ${issue.location.line}',
+          );
         }
+      }
+
+      logger.plain('');
+      logger.info(
+        'Total: ${fixResult.totalIssues} issue(s) across ${files.length} file(s).',
+      );
+      if (fixResult.skippedIssues.isNotEmpty) {
+        logger.warning(
+          'Skipped ${fixResult.skippedIssues.length} issue(s) because files were missing or offsets were invalid.',
+        );
       }
       return;
     }
 
     logger.header('Auto-fix Unused Code');
     logger.warning(
-      'This will permanently modify ${result.issues.where((i) => i.canAutoFix).length} files.',
+      'This will permanently modify ${fixableIssues.length} issue(s) across '
+      '${fixableIssues.map((i) => i.location.filePath).toSet().length} file(s).',
     );
     logger.plain('');
 
@@ -394,9 +427,19 @@ class UnusedCodeCommand extends Command<int> {
       return;
     }
 
-    // TODO: Implement actual auto-fix logic
-    logger.warning(
-      'Auto-fix not yet implemented. Use --fix-dry-run to preview changes.',
+    final fixResult = await autoFixer.applyFixes(result, dryRun: false);
+    if (fixResult.totalIssues == 0) {
+      logger.info('No changes were applied.');
+      return;
+    }
+
+    logger.success(
+      'Auto-fix applied: removed ${fixResult.totalIssues} issue(s) across ${fixResult.filesChanged} file(s).',
     );
+    if (fixResult.skippedIssues.isNotEmpty) {
+      logger.warning(
+        'Skipped ${fixResult.skippedIssues.length} issue(s) because files were missing or offsets were invalid.',
+      );
+    }
   }
 }

@@ -6,19 +6,31 @@ import '../models/code_scan_config.dart';
 import '../models/code_scan_result.dart';
 import '../scanner/melos_detector.dart';
 import '../utils/logger.dart';
+import 'di_detector.dart';
 import 'reference_resolver.dart';
+import 'semantic_analyzer.dart';
 import 'symbol_collector.dart';
 import 'unused_detector.dart';
 
-/// Main orchestrator for unused code analysis
+/// Main orchestrator for unused code analysis.
+///
+/// Supports two analysis modes:
+/// - AST-only (fast): Name-based reference matching
+/// - Semantic (accurate): Full type resolution with extension/DI tracking
 class CodeAnalyzer {
   final CodeScanConfig config;
   final Logger logger;
+
+  /// Semantic analyzer for full type resolution (lazy initialized)
+  SemanticAnalyzer? _semanticAnalyzer;
 
   CodeAnalyzer({
     required this.config,
     Logger? logger,
   }) : logger = logger ?? Logger(verbose: config.verbose);
+
+  /// Whether semantic analysis is enabled
+  bool get useSemanticAnalysis => config.semantic.enabled;
 
   /// Run the analysis and return results
   Future<CodeScanResult> analyze() async {
@@ -26,6 +38,12 @@ class CodeAnalyzer {
 
     logger.header('Unused Code Analysis');
     logger.info('Analyzing: ${config.rootPath}');
+
+    if (useSemanticAnalysis) {
+      logger.info('Using semantic analysis (accurate mode)');
+    } else {
+      logger.info('Using AST-only analysis (fast mode)');
+    }
 
     // Check for Melos workspace
     final melosDetector = MelosDetector(rootPath: config.rootPath);
@@ -82,12 +100,34 @@ class CodeAnalyzer {
     final references = await referenceResolver.resolve(config.rootPath);
     logger.debug('Found ${references.references.length} references');
 
+    // Phase 2.5: Semantic analysis (if enabled)
+    SemanticReferenceCollection? semanticRefs;
+    DIDetectionResult? diResult;
+
+    if (useSemanticAnalysis) {
+      logger.debug('Phase 2.5: Running semantic analysis...');
+      final semanticResult = await _runSemanticAnalysis(config.rootPath);
+      semanticRefs = semanticResult.references;
+      diResult = semanticResult.diResult;
+
+      if (semanticRefs != null) {
+        logger.debug('Found ${semanticRefs.usedExtensions.length} extension usages');
+        logger.debug('Found ${semanticRefs.usedElementIds.length} element usages');
+      }
+
+      if (diResult != null) {
+        logger.debug('Found ${diResult.allTypes.length} DI-registered types');
+      }
+    }
+
     // Phase 3: Detect unused code
     logger.debug('Phase 3: Detecting unused code...');
     final unusedDetector = UnusedDetector(config: config, logger: logger);
     final issues = unusedDetector.detect(
       symbols: symbols,
       references: references,
+      semanticReferences: semanticRefs,
+      diTypes: diResult?.allTypes,
     );
     logger.debug('Found ${issues.length} issues');
 
@@ -103,6 +143,63 @@ class CodeAnalyzer {
         scanDurationMs: stopwatch.elapsedMilliseconds,
       ),
     );
+  }
+
+  /// Run semantic analysis on a directory.
+  Future<_SemanticAnalysisResult> _runSemanticAnalysis(String directoryPath) async {
+    try {
+      _semanticAnalyzer ??= SemanticAnalyzer(config: config, logger: logger);
+      await _semanticAnalyzer!.initialize([directoryPath]);
+
+      if (!_semanticAnalyzer!.isAvailable) {
+        logger.warning('Semantic analysis not available, falling back to AST-only');
+        return _SemanticAnalysisResult(references: null, diResult: null);
+      }
+
+      final refs = await _semanticAnalyzer!.analyzeDirectory(directoryPath);
+
+      // Run DI detection if enabled
+      DIDetectionResult? diResult;
+      if (config.semantic.detectDI) {
+        diResult = DIDetectionResult(
+          registeredTypes: refs.diRegistrations.map((r) => r.typeName).toSet(),
+          retrievedTypes: {},
+          registrations: refs.diRegistrations,
+          retrievals: [],
+        );
+      }
+
+      return _SemanticAnalysisResult(references: refs, diResult: diResult);
+    } catch (e) {
+      logger.warning('Semantic analysis failed: $e');
+      return _SemanticAnalysisResult(references: null, diResult: null);
+    }
+  }
+
+  /// Run semantic analysis on multiple packages.
+  Future<_SemanticAnalysisResult> _runSemanticAnalysisForPackages(
+    List<PackageInfo> packages,
+  ) async {
+    try {
+      _semanticAnalyzer ??= SemanticAnalyzer(config: config, logger: logger);
+      final refs = await _semanticAnalyzer!.analyzePackages(packages);
+
+      // Run DI detection if enabled
+      DIDetectionResult? diResult;
+      if (config.semantic.detectDI) {
+        diResult = DIDetectionResult(
+          registeredTypes: refs.diRegistrations.map((r) => r.typeName).toSet(),
+          retrievedTypes: {},
+          registrations: refs.diRegistrations,
+          retrievals: [],
+        );
+      }
+
+      return _SemanticAnalysisResult(references: refs, diResult: diResult);
+    } catch (e) {
+      logger.warning('Semantic analysis failed: $e');
+      return _SemanticAnalysisResult(references: null, diResult: null);
+    }
   }
 
   /// Analyze a Melos workspace
@@ -162,12 +259,33 @@ class CodeAnalyzer {
     final references = await referenceResolver.resolveFromPackages(packages);
     logger.debug('Found ${references.references.length} total references');
 
+    // Phase 2.5: Semantic analysis (if enabled)
+    SemanticReferenceCollection? semanticRefs;
+    DIDetectionResult? diResult;
+
+    if (useSemanticAnalysis) {
+      logger.debug('Phase 2.5: Running semantic analysis...');
+      final semanticResult = await _runSemanticAnalysisForPackages(packages);
+      semanticRefs = semanticResult.references;
+      diResult = semanticResult.diResult;
+
+      if (semanticRefs != null) {
+        logger.debug('Found ${semanticRefs.usedExtensions.length} extension usages');
+      }
+
+      if (diResult != null) {
+        logger.debug('Found ${diResult.allTypes.length} DI-registered types');
+      }
+    }
+
     // Phase 3: Detect unused code
     logger.debug('Phase 3: Detecting unused code...');
     final unusedDetector = UnusedDetector(config: config, logger: logger);
     final issues = unusedDetector.detect(
       symbols: symbols,
       references: references,
+      semanticReferences: semanticRefs,
+      diTypes: diResult?.allTypes,
     );
     logger.debug('Found ${issues.length} issues');
 
@@ -221,12 +339,25 @@ class CodeAnalyzer {
     final referenceResolver = ReferenceResolver(config: config, logger: logger);
     final allReferences = await referenceResolver.resolveFromPackages(packages);
 
+    // Semantic analysis (if enabled)
+    SemanticReferenceCollection? semanticRefs;
+    DIDetectionResult? diResult;
+
+    if (useSemanticAnalysis) {
+      logger.debug('Running semantic analysis...');
+      final semanticResult = await _runSemanticAnalysisForPackages(packages);
+      semanticRefs = semanticResult.references;
+      diResult = semanticResult.diResult;
+    }
+
     // Detect unused in target package using all references
     logger.debug('Detecting unused code...');
     final unusedDetector = UnusedDetector(config: config, logger: logger);
     final issues = unusedDetector.detect(
       symbols: targetSymbols,
       references: allReferences,
+      semanticReferences: semanticRefs,
+      diTypes: diResult?.allTypes,
     );
 
     stopwatch.stop();
@@ -244,5 +375,22 @@ class CodeAnalyzer {
       packagePaths: packagePaths,
     );
   }
+
+  /// Dispose resources
+  void dispose() {
+    _semanticAnalyzer?.dispose();
+    _semanticAnalyzer = null;
+  }
+}
+
+/// Result of semantic analysis
+class _SemanticAnalysisResult {
+  final SemanticReferenceCollection? references;
+  final DIDetectionResult? diResult;
+
+  const _SemanticAnalysisResult({
+    required this.references,
+    required this.diResult,
+  });
 }
 

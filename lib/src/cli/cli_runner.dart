@@ -13,12 +13,13 @@ class CliRunner {
 
   /// Run the CLI
   Future<int> run() async {
-    final runner = CommandRunner<int>(
-      'flutter_tools',
-      'Flutter Asset Hygiene - Find unused assets and code in Flutter/Dart projects',
-    )
-      ..addCommand(AssetsCommand())
-      ..addCommand(UnusedCodeCommand());
+    final runner =
+        CommandRunner<int>(
+            'flutter_tools',
+            'Flutter Asset Hygiene - Find unused assets and code in Flutter/Dart projects',
+          )
+          ..addCommand(AssetsCommand())
+          ..addCommand(UnusedCodeCommand());
 
     try {
       // If no command is provided, show help
@@ -35,7 +36,7 @@ class CliRunner {
       }
 
       if (arguments.contains('--version')) {
-        print('flutter_tools v0.2.0');
+        print('flutter_tools v0.3.0');
         return 0;
       }
 

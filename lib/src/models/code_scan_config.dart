@@ -54,6 +54,9 @@ class CodeScanConfig {
   /// Monorepo-specific configuration
   final MonorepoConfig monorepo;
 
+  /// Semantic analysis configuration
+  final SemanticConfig semantic;
+
   const CodeScanConfig({
     required this.rootPath,
     this.includeTests = false,
@@ -71,6 +74,7 @@ class CodeScanConfig {
     this.rules = const RulesConfig(),
     this.publicApi = const PublicApiConfig(),
     this.monorepo = const MonorepoConfig(),
+    this.semantic = const SemanticConfig(),
   });
 
   /// Load configuration from YAML file
@@ -96,6 +100,7 @@ class CodeScanConfig {
       rules: RulesConfig.fromYaml(unusedCode['rules'] as YamlMap?),
       publicApi: PublicApiConfig.fromYaml(unusedCode['public_api'] as YamlMap?),
       monorepo: MonorepoConfig.fromYaml(unusedCode['monorepo'] as YamlMap?),
+      semantic: SemanticConfig.fromYaml(unusedCode['semantic'] as YamlMap?),
       outputFormat: _parseOutputFormat(unusedCode['output']),
       minSeverity: _parseSeverity(unusedCode['severity']),
     );
@@ -161,6 +166,7 @@ class CodeScanConfig {
     RulesConfig? rules,
     PublicApiConfig? publicApi,
     MonorepoConfig? monorepo,
+    SemanticConfig? semantic,
   }) {
     return CodeScanConfig(
       rootPath: rootPath ?? this.rootPath,
@@ -179,6 +185,7 @@ class CodeScanConfig {
       rules: rules ?? this.rules,
       publicApi: publicApi ?? this.publicApi,
       monorepo: monorepo ?? this.monorepo,
+      semantic: semantic ?? this.semantic,
     );
   }
 }
@@ -355,5 +362,116 @@ class MonorepoConfig {
     if (value is String) return [value];
     return [];
   }
+}
+
+/// Configuration for semantic analysis
+class SemanticConfig {
+  /// Whether to enable semantic analysis (full type resolution)
+  ///
+  /// When enabled:
+  /// - Extension methods are tracked accurately (implicit calls)
+  /// - DI patterns are detected (GetIt, injectable, riverpod)
+  /// - Import usage is tracked per-symbol
+  /// - False positive rate is significantly reduced
+  ///
+  /// Trade-off: ~3-5x slower than AST-only analysis
+  final bool enabled;
+
+  /// Whether to track extension method usage
+  final bool trackExtensions;
+
+  /// Whether to detect DI patterns
+  final bool detectDI;
+
+  /// DI frameworks to detect
+  final Set<DIFramework> diFrameworks;
+
+  /// Whether to track per-symbol import usage
+  final bool trackImportSymbols;
+
+  /// Whether to report partially used imports
+  final bool reportPartialImports;
+
+  const SemanticConfig({
+    this.enabled = true,
+    this.trackExtensions = true,
+    this.detectDI = true,
+    this.diFrameworks = const {
+      DIFramework.getIt,
+      DIFramework.injectable,
+      DIFramework.riverpod,
+      DIFramework.provider,
+      DIFramework.bloc,
+    },
+    this.trackImportSymbols = true,
+    this.reportPartialImports = true,
+  });
+
+  factory SemanticConfig.fromYaml(YamlMap? yaml) {
+    if (yaml == null) return const SemanticConfig();
+
+    return SemanticConfig(
+      enabled: yaml['enabled'] as bool? ?? true,
+      trackExtensions: yaml['track_extensions'] as bool? ?? true,
+      detectDI: yaml['detect_di'] as bool? ?? true,
+      diFrameworks: _parseDIFrameworks(yaml['di_frameworks']),
+      trackImportSymbols: yaml['track_import_symbols'] as bool? ?? true,
+      reportPartialImports: yaml['report_partial_imports'] as bool? ?? true,
+    );
+  }
+
+  static Set<DIFramework> _parseDIFrameworks(dynamic value) {
+    if (value == null) {
+      return const {
+        DIFramework.getIt,
+        DIFramework.injectable,
+        DIFramework.riverpod,
+        DIFramework.provider,
+        DIFramework.bloc,
+      };
+    }
+
+    if (value is YamlList) {
+      return value.map((e) => _parseDIFramework(e.toString())).whereType<DIFramework>().toSet();
+    }
+
+    return const {};
+  }
+
+  static DIFramework? _parseDIFramework(String value) {
+    switch (value.toLowerCase()) {
+      case 'getit':
+      case 'get_it':
+        return DIFramework.getIt;
+      case 'injectable':
+        return DIFramework.injectable;
+      case 'riverpod':
+        return DIFramework.riverpod;
+      case 'provider':
+        return DIFramework.provider;
+      case 'bloc':
+        return DIFramework.bloc;
+      default:
+        return null;
+    }
+  }
+}
+
+/// Supported DI frameworks for detection
+enum DIFramework {
+  /// GetIt service locator
+  getIt,
+
+  /// Injectable code generation
+  injectable,
+
+  /// Riverpod state management
+  riverpod,
+
+  /// Provider state management
+  provider,
+
+  /// BLoC pattern
+  bloc,
 }
 

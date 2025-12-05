@@ -6,9 +6,14 @@ import '../models/code_element.dart';
 import '../models/code_scan_config.dart';
 import '../utils/logger.dart';
 import 'reference_resolver.dart';
+import 'semantic_analyzer.dart';
 import 'symbol_collector.dart';
 
-/// Detects unused code by comparing declarations with references
+/// Detects unused code by comparing declarations with references.
+///
+/// Supports both AST-only and semantic analysis modes:
+/// - AST-only: Fast but name-based matching only
+/// - Semantic: Accurate with extension/DI tracking
 class UnusedDetector {
   final CodeScanConfig config;
   final Logger logger;
@@ -19,35 +24,47 @@ class UnusedDetector {
   });
 
   /// Detect unused code
+  ///
+  /// [semanticReferences] - Optional semantic references for accurate analysis
+  /// [diTypes] - Optional set of types registered via DI (considered used)
   List<CodeIssue> detect({
     required SymbolCollection symbols,
     required ReferenceCollection references,
+    SemanticReferenceCollection? semanticReferences,
+    Set<String>? diTypes,
   }) {
     final issues = <CodeIssue>[];
 
+    // Create enhanced reference checker
+    final refChecker = _ReferenceChecker(
+      references: references,
+      semanticReferences: semanticReferences,
+      diTypes: diTypes ?? {},
+    );
+
     // Detect unused classes
     if (config.rules.unusedClasses.enabled) {
-      issues.addAll(_detectUnusedClasses(symbols, references));
+      issues.addAll(_detectUnusedClasses(symbols, refChecker));
     }
 
     // Detect unused functions
     if (config.rules.unusedFunctions.enabled) {
-      issues.addAll(_detectUnusedFunctions(symbols, references));
+      issues.addAll(_detectUnusedFunctions(symbols, refChecker));
     }
 
     // Detect unused members (methods, fields, etc.)
     if (config.rules.unusedMembers.enabled) {
-      issues.addAll(_detectUnusedMembers(symbols, references));
+      issues.addAll(_detectUnusedMembers(symbols, refChecker));
     }
 
     // Detect unused parameters
     if (config.rules.unusedParameters.enabled) {
-      issues.addAll(_detectUnusedParameters(symbols, references));
+      issues.addAll(_detectUnusedParameters(symbols, refChecker));
     }
 
     // Detect unused imports
     if (config.rules.unusedImports.enabled) {
-      issues.addAll(_detectUnusedImports(references));
+      issues.addAll(_detectUnusedImports(references, semanticReferences));
     }
 
     // Filter by minimum severity
@@ -59,7 +76,7 @@ class UnusedDetector {
   /// Detect unused classes, mixins, extensions, enums, typedefs
   List<CodeIssue> _detectUnusedClasses(
     SymbolCollection symbols,
-    ReferenceCollection references,
+    _ReferenceChecker refChecker,
   ) {
     final issues = <CodeIssue>[];
     final ruleConfig = config.rules.unusedClasses;
@@ -93,9 +110,16 @@ class UnusedDetector {
         continue;
       }
 
-      // Check if referenced
-      if (!references.isTypeReferenced(declaration.name) &&
-          !references.isReferenced(declaration.name)) {
+      // Check if referenced (using enhanced checker)
+      if (!refChecker.isReferenced(declaration.name) &&
+          !refChecker.isTypeReferenced(declaration.name)) {
+        // For extensions, also check semantic extension usage
+        if (declaration.type == CodeElementType.extensionDeclaration) {
+          if (refChecker.isExtensionUsed(declaration.name)) {
+            continue; // Extension is used implicitly
+          }
+        }
+
         final category = _getCategoryForType(declaration.type);
         final message = _getMessageForUnusedType(declaration);
 
@@ -119,7 +143,7 @@ class UnusedDetector {
   /// Detect unused top-level functions
   List<CodeIssue> _detectUnusedFunctions(
     SymbolCollection symbols,
-    ReferenceCollection references,
+    _ReferenceChecker refChecker,
   ) {
     final issues = <CodeIssue>[];
     final ruleConfig = config.rules.unusedFunctions;
@@ -148,8 +172,8 @@ class UnusedDetector {
         continue;
       }
 
-      // Check if referenced
-      if (!references.isReferenced(function.name)) {
+      // Check if referenced (using enhanced checker)
+      if (!refChecker.isReferenced(function.name)) {
         issues.add(CodeIssue(
           category: IssueCategory.unusedFunction,
           severity: IssueSeverity.warning,
@@ -170,7 +194,7 @@ class UnusedDetector {
   /// Detect unused class members
   List<CodeIssue> _detectUnusedMembers(
     SymbolCollection symbols,
-    ReferenceCollection references,
+    _ReferenceChecker refChecker,
   ) {
     final issues = <CodeIssue>[];
     final ruleConfig = config.rules.unusedMembers;
@@ -214,9 +238,9 @@ class UnusedDetector {
         continue;
       }
 
-      // Check if referenced
-      if (!references.isReferenced(member.name) &&
-          !references.isReferenced(member.qualifiedName)) {
+      // Check if referenced (using enhanced checker)
+      if (!refChecker.isReferenced(member.name) &&
+          !refChecker.isReferenced(member.qualifiedName)) {
         final category = _getCategoryForMember(member.type);
 
         issues.add(CodeIssue(
@@ -239,7 +263,7 @@ class UnusedDetector {
   /// Detect unused parameters
   List<CodeIssue> _detectUnusedParameters(
     SymbolCollection symbols,
-    ReferenceCollection references,
+    _ReferenceChecker refChecker,
   ) {
     final issues = <CodeIssue>[];
     final ruleConfig = config.rules.unusedParameters;
@@ -261,8 +285,8 @@ class UnusedDetector {
         if (parentFunction.isNotEmpty) continue;
       }
 
-      // Check if referenced
-      if (!references.isReferenced(param.name)) {
+      // Check if referenced (using enhanced checker)
+      if (!refChecker.isReferenced(param.name)) {
         issues.add(CodeIssue(
           category: IssueCategory.unusedParameter,
           severity: IssueSeverity.info,
@@ -281,22 +305,58 @@ class UnusedDetector {
   }
 
   /// Detect unused imports
-  List<CodeIssue> _detectUnusedImports(ReferenceCollection references) {
+  List<CodeIssue> _detectUnusedImports(
+    ReferenceCollection references,
+    SemanticReferenceCollection? semanticReferences,
+  ) {
     final issues = <CodeIssue>[];
 
-    for (final unusedImport in references.unusedImports) {
-      // Skip dart:core
-      if (unusedImport.uri == 'dart:core') continue;
+    // Use semantic references if available for more accurate detection
+    if (semanticReferences != null && config.semantic.trackImportSymbols) {
+      // Completely unused imports
+      for (final unusedImport in semanticReferences.getUnusedImports()) {
+        if (unusedImport.uri == 'dart:core') continue;
 
-      issues.add(CodeIssue(
-        category: IssueCategory.unusedImport,
-        severity: IssueSeverity.info,
-        symbol: unusedImport.displayName,
-        location: unusedImport.location,
-        message: "Import '${unusedImport.uri}' is never used",
-        suggestion: 'Remove the unused import',
-        canAutoFix: true,
-      ));
+        issues.add(CodeIssue(
+          category: IssueCategory.unusedImport,
+          severity: IssueSeverity.info,
+          symbol: unusedImport.displayName,
+          location: unusedImport.location,
+          message: "Import '${unusedImport.uri}' is never used",
+          suggestion: 'Remove the unused import',
+          canAutoFix: true,
+        ));
+      }
+
+      // Partially used imports (if enabled)
+      if (config.semantic.reportPartialImports) {
+        for (final partial in semanticReferences.getPartiallyUsedImports()) {
+          issues.add(CodeIssue(
+            category: IssueCategory.unusedImport,
+            severity: IssueSeverity.info,
+            symbol: partial.uri,
+            location: partial.location,
+            message: partial.message,
+            suggestion: partial.suggestion,
+            canAutoFix: true,
+          ));
+        }
+      }
+    } else {
+      // Fallback to AST-only detection
+      for (final unusedImport in references.unusedImports) {
+        if (unusedImport.uri == 'dart:core') continue;
+
+        issues.add(CodeIssue(
+          category: IssueCategory.unusedImport,
+          severity: IssueSeverity.info,
+          symbol: unusedImport.displayName,
+          location: unusedImport.location,
+          message: "Import '${unusedImport.uri}' is never used",
+          suggestion: 'Remove the unused import',
+          canAutoFix: true,
+        ));
+      }
     }
 
     return issues;
@@ -503,6 +563,77 @@ class UnusedDetector {
   bool _severityMeetsMinimum(IssueSeverity severity, IssueSeverity minimum) {
     const order = [IssueSeverity.info, IssueSeverity.warning, IssueSeverity.error];
     return order.indexOf(severity) >= order.indexOf(minimum);
+  }
+}
+
+/// Helper class for checking references with both AST and semantic data.
+class _ReferenceChecker {
+  final ReferenceCollection references;
+  final SemanticReferenceCollection? semanticReferences;
+  final Set<String> diTypes;
+
+  const _ReferenceChecker({
+    required this.references,
+    this.semanticReferences,
+    required this.diTypes,
+  });
+
+  /// Check if an identifier is referenced.
+  bool isReferenced(String identifier) {
+    // Check DI types first
+    if (diTypes.contains(identifier)) {
+      return true;
+    }
+
+    // Check AST references
+    if (references.isReferenced(identifier)) {
+      return true;
+    }
+
+    // Check semantic references if available
+    if (semanticReferences != null) {
+      if (semanticReferences!.usedElementIds.contains(identifier)) {
+        return true;
+      }
+      // Also check with simple name matching
+      for (final elementId in semanticReferences!.usedElementIds) {
+        if (elementId.endsWith('::$identifier')) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /// Check if a type is referenced.
+  bool isTypeReferenced(String typeName) {
+    // Check DI types first
+    if (diTypes.contains(typeName)) {
+      return true;
+    }
+
+    // Check AST references
+    if (references.isTypeReferenced(typeName)) {
+      return true;
+    }
+
+    // Check semantic references if available
+    if (semanticReferences != null) {
+      if (semanticReferences!.usedElementIds.contains(typeName)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Check if an extension is used (semantic mode only).
+  bool isExtensionUsed(String extensionName) {
+    if (semanticReferences != null) {
+      return semanticReferences!.isExtensionUsed(extensionName);
+    }
+    return false;
   }
 }
 

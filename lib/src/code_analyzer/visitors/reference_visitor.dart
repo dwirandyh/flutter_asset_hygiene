@@ -1,10 +1,16 @@
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/dart/analysis/results.dart';
+import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/source/line_info.dart';
 
 import '../../models/code_element.dart';
 
-/// AST Visitor to collect all references (usages) in a Dart file
+/// AST Visitor to collect all references (usages) in a Dart file.
+///
+/// Supports two modes:
+/// - AST-only mode (default): Fast but name-based matching only
+/// - Semantic mode: Slower but accurate with full type resolution
 class ReferenceVisitor extends RecursiveAstVisitor<void> {
   /// Collected references
   final List<CodeReference> references = [];
@@ -18,6 +24,12 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
   /// Set of imported URIs that are used
   final Set<String> usedImports = {};
 
+  /// Set of used extension names (semantic mode only)
+  final Set<String> usedExtensions = {};
+
+  /// Set of fully qualified element IDs (semantic mode only)
+  final Set<String> usedElementIds = {};
+
   /// Map of import prefix to URI
   final Map<String, String> _importPrefixes = {};
 
@@ -26,6 +38,9 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
 
   /// Package name (for monorepo support)
   final String? packageName;
+
+  /// Resolved unit for semantic analysis (optional)
+  final ResolvedUnitResult? resolvedUnit;
 
   /// Parameters that are used in the current function
   final Set<String> _usedParameters = {};
@@ -36,7 +51,11 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
   ReferenceVisitor({
     required this.filePath,
     this.packageName,
+    this.resolvedUnit,
   });
+
+  /// Whether semantic analysis is available
+  bool get hasSemanticInfo => resolvedUnit != null;
 
   @override
   void visitImportDirective(ImportDirective node) {
@@ -62,6 +81,14 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
     // Track parameter usage
     if (_currentParameters.contains(name)) {
       _usedParameters.add(name);
+    }
+
+    // Semantic mode: track element usage
+    if (hasSemanticInfo) {
+      final element = node.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+      }
     }
 
     // Create reference
@@ -190,6 +217,24 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
       referencedIdentifiers.add(target.name);
     }
 
+    // Semantic mode: check for extension method usage
+    if (hasSemanticInfo) {
+      final element = node.methodName.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+
+        // Check for extension method
+        final enclosing = element.enclosingElement3;
+        if (enclosing is ExtensionElement) {
+          final extensionName = enclosing.name;
+          if (extensionName != null && extensionName.isNotEmpty) {
+            usedExtensions.add(extensionName);
+            referencedIdentifiers.add(extensionName);
+          }
+        }
+      }
+    }
+
     final reference = CodeReference(
       elementId: methodName,
       location: _locationFromNode(node),
@@ -310,6 +355,24 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
     final propertyName = node.propertyName.name;
     referencedIdentifiers.add(propertyName);
 
+    // Semantic mode: check for extension property usage
+    if (hasSemanticInfo) {
+      final element = node.propertyName.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+
+        // Check for extension property
+        final enclosing = element.enclosingElement3;
+        if (enclosing is ExtensionElement) {
+          final extensionName = enclosing.name;
+          if (extensionName != null && extensionName.isNotEmpty) {
+            usedExtensions.add(extensionName);
+            referencedIdentifiers.add(extensionName);
+          }
+        }
+      }
+    }
+
     final reference = CodeReference(
       elementId: propertyName,
       location: _locationFromNode(node),
@@ -387,6 +450,49 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
     return ReferenceType.read;
   }
 
+  /// Track element usage with full semantic information (semantic mode only).
+  void _trackElementUsage(Element element, AstNode node) {
+    final elementId = _getElementId(element);
+    usedElementIds.add(elementId);
+
+    // Also add the simple name for backward compatibility
+    final name = element.name;
+    if (name != null && name.isNotEmpty) {
+      usedElementIds.add(name);
+    }
+  }
+
+  /// Get a unique ID for an element.
+  String _getElementId(Element element) {
+    final parts = <String>[];
+
+    // Add library URI
+    final library = element.library;
+    if (library != null) {
+      parts.add(library.source.uri.toString());
+    }
+
+    // Add enclosing elements
+    Element? current = element.enclosingElement3;
+    final enclosingNames = <String>[];
+    while (current != null && current is! LibraryElement) {
+      final name = current.name;
+      if (name != null && name.isNotEmpty) {
+        enclosingNames.insert(0, name);
+      }
+      current = current.enclosingElement3;
+    }
+    parts.addAll(enclosingNames);
+
+    // Add element name
+    final name = element.name;
+    if (name != null && name.isNotEmpty) {
+      parts.add(name);
+    }
+
+    return parts.join('::');
+  }
+
   SourceLocation _locationFromNode(AstNode node) {
     final root = node.root;
     LineInfo? lineInfo;
@@ -415,6 +521,8 @@ class ReferenceResult {
   final Set<String> referencedIdentifiers;
   final Set<String> referencedTypes;
   final Set<String> usedImports;
+  final Set<String> usedExtensions;
+  final Set<String> usedElementIds;
   final String filePath;
   final String? packageName;
 
@@ -423,6 +531,8 @@ class ReferenceResult {
     required this.referencedIdentifiers,
     required this.referencedTypes,
     required this.usedImports,
+    this.usedExtensions = const {},
+    this.usedElementIds = const {},
     required this.filePath,
     this.packageName,
   });
@@ -433,12 +543,16 @@ class ReferenceResult {
     final allIdentifiers = <String>{};
     final allTypes = <String>{};
     final allImports = <String>{};
+    final allExtensions = <String>{};
+    final allElementIds = <String>{};
 
     for (final result in results) {
       allReferences.addAll(result.references);
       allIdentifiers.addAll(result.referencedIdentifiers);
       allTypes.addAll(result.referencedTypes);
       allImports.addAll(result.usedImports);
+      allExtensions.addAll(result.usedExtensions);
+      allElementIds.addAll(result.usedElementIds);
     }
 
     return ReferenceResult(
@@ -446,6 +560,8 @@ class ReferenceResult {
       referencedIdentifiers: allIdentifiers,
       referencedTypes: allTypes,
       usedImports: allImports,
+      usedExtensions: allExtensions,
+      usedElementIds: allElementIds,
       filePath: '',
     );
   }
