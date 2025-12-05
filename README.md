@@ -1,4 +1,4 @@
-# Unused Assets Scanner
+# Flutter Asset Hygiene
 
 CLI utility that finds unused assets in Flutter/Dart projects, including Melos workspaces, and can export results or delete the leftovers for you.
 
