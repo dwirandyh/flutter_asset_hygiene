@@ -1,4 +1,4 @@
-# Flutter Asset Hygiene
+# Unused Assets Scanner
 
 CLI utility that finds unused assets in Flutter/Dart projects, including Melos workspaces, and can export results or delete the leftovers for you.
 
@@ -37,19 +37,20 @@ Common examples:
 - Delete unused assets (with confirmation): `dart run lib/main.dart --delete`
 
 Flags and defaults:
-- `--path, -p` project root (default `.`)
-- `--include-tests, -t` scan tests (default `false`)
-- `--include-generated, -g` scan generated Dart files (default `false`)
-- `--exclude, -e` comma-separated globs to skip
-- `--format, -f` `console|json|csv` (default `console`)
-- `--output, -o` file path for JSON/CSV
-- `--verbose, -v` verbose logs (default `false`)
-- `--delete, -d` delete unused assets after scan (default `false`)
-- `--no-color` disable ANSI colors
-- `--show-used` include used assets in output (default `false`)
-- `--show-potential` include dynamic/potential assets (default `true`)
-- `--scan-workspace, -w` cross-package scan in Melos workspaces (default `true`)
-- `--help, -h`, `--version`
+- `--path, -p` path to the project root (default `.`)
+- `--include-tests, -t` include test files in the scan (default `false`)
+- `--include-generated, -g` include generated files (`*.g.dart`, `*.freezed.dart`, etc.) (default `false`)
+- `--exclude, -e` comma-separated glob patterns to exclude
+- `--format, -f` output format: `console|json|csv` (default `console`)
+- `--output, -o` output file path (for json/csv formats)
+- `--verbose, -v` show verbose output (default `false`)
+- `--delete, -d` delete unused assets with confirmation (default `false`)
+- `--no-color` disable colored output (default `false`)
+- `--show-used` also show used assets in the output (default `false`)
+- `--show-potential` show potentially used assets with dynamic references (default `true`)
+- `--scan-workspace, -w` scan entire Melos workspace for cross-package asset usage (default `true`)
+- `--help, -h` show help message
+- `--version` show version number
 
 Exit codes:
 - `0` when no unused assets are found
