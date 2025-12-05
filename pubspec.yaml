@@ -1,0 +1,18 @@
+name: flutter_tools
+description: "CLI tool for detecting unused assets in Flutter/Dart projects"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  analyzer: ^7.4.5
+  args: ^2.6.0
+  yaml: ^3.1.3
+  path: ^1.9.1
+  glob: ^2.1.3
+  collection: ^1.19.1
+
+dev_dependencies:
+  lints: ^5.1.1
