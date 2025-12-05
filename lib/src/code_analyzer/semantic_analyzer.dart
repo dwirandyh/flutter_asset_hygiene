@@ -25,10 +25,7 @@ class SemanticAnalyzer {
 
   AnalysisContextCollection? _contextCollection;
 
-  SemanticAnalyzer({
-    required this.config,
-    required this.logger,
-  });
+  SemanticAnalyzer({required this.config, required this.logger});
 
   /// Initialize the analysis context for the given paths.
   Future<void> initialize(List<String> includedPaths) async {
@@ -42,7 +39,9 @@ class SemanticAnalyzer {
       return;
     }
 
-    logger.debug('Initializing semantic analyzer for ${normalizedPaths.length} paths');
+    logger.debug(
+      'Initializing semantic analyzer for ${normalizedPaths.length} paths',
+    );
 
     try {
       _contextCollection = AnalysisContextCollection(
@@ -70,7 +69,9 @@ class SemanticAnalyzer {
 
     try {
       final context = _contextCollection!.contextFor(normalizedPath);
-      final result = await context.currentSession.getResolvedUnit(normalizedPath);
+      final result = await context.currentSession.getResolvedUnit(
+        normalizedPath,
+      );
 
       if (result is ResolvedUnitResult) {
         return result;
@@ -275,12 +276,14 @@ class SemanticReferenceCollection {
       if (info.shownSymbols.isNotEmpty) {
         final unusedSymbols = info.shownSymbols.difference(info.usedSymbols);
         if (unusedSymbols.isNotEmpty && info.usedSymbols.isNotEmpty) {
-          result.add(PartiallyUsedImport(
-            uri: entry.key,
-            usedSymbols: info.usedSymbols.toList(),
-            unusedSymbols: unusedSymbols.toList(),
-            location: info.location,
-          ));
+          result.add(
+            PartiallyUsedImport(
+              uri: entry.key,
+              usedSymbols: info.usedSymbols.toList(),
+              unusedSymbols: unusedSymbols.toList(),
+              location: info.location,
+            ),
+          );
         }
       }
     }
@@ -295,11 +298,13 @@ class SemanticReferenceCollection {
     for (final entry in importUsage.entries) {
       final info = entry.value;
       if (info.usedSymbols.isEmpty && !info.isUsedImplicitly) {
-        result.add(UnusedImportInfo(
-          uri: entry.key,
-          location: info.location,
-          prefix: info.prefix,
-        ));
+        result.add(
+          UnusedImportInfo(
+            uri: entry.key,
+            location: info.location,
+            prefix: info.prefix,
+          ),
+        );
       }
     }
 
@@ -515,13 +520,7 @@ class DIRegistration {
 }
 
 /// Supported DI frameworks.
-enum DIFramework {
-  getIt,
-  injectable,
-  riverpod,
-  provider,
-  bloc,
-}
+enum DIFramework { getIt, injectable, riverpod, provider, bloc }
 
 /// DI registration types.
 enum DIRegistrationType {
@@ -531,4 +530,3 @@ enum DIRegistrationType {
   provider,
   notifier,
 }
-

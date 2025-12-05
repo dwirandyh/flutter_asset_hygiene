@@ -18,10 +18,7 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
   /// Current class/mixin/extension being visited
   String? _currentParent;
 
-  DeclarationVisitor({
-    required this.filePath,
-    this.packageName,
-  });
+  DeclarationVisitor({required this.filePath, this.packageName});
 
   @override
   void visitClassDeclaration(ClassDeclaration node) {
@@ -401,10 +398,6 @@ class DeclarationResult {
     for (final result in results) {
       allDeclarations.addAll(result.declarations);
     }
-    return DeclarationResult(
-      declarations: allDeclarations,
-      filePath: '',
-    );
+    return DeclarationResult(declarations: allDeclarations, filePath: '');
   }
 }
-

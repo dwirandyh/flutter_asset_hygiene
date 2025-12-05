@@ -234,8 +234,12 @@ class RulesConfig {
 
     return RulesConfig(
       unusedClasses: RuleConfig.fromYaml(yaml['unused_classes'] as YamlMap?),
-      unusedFunctions: RuleConfig.fromYaml(yaml['unused_functions'] as YamlMap?),
-      unusedParameters: RuleConfig.fromYaml(yaml['unused_parameters'] as YamlMap?),
+      unusedFunctions: RuleConfig.fromYaml(
+        yaml['unused_functions'] as YamlMap?,
+      ),
+      unusedParameters: RuleConfig.fromYaml(
+        yaml['unused_parameters'] as YamlMap?,
+      ),
       unusedImports: RuleConfig.fromYaml(yaml['unused_imports'] as YamlMap?),
       unusedMembers: RuleConfig.fromYaml(yaml['unused_members'] as YamlMap?),
       unusedExports: RuleConfig.fromYaml(yaml['unused_exports'] as YamlMap?),
@@ -432,7 +436,10 @@ class SemanticConfig {
     }
 
     if (value is YamlList) {
-      return value.map((e) => _parseDIFramework(e.toString())).whereType<DIFramework>().toSet();
+      return value
+          .map((e) => _parseDIFramework(e.toString()))
+          .whereType<DIFramework>()
+          .toSet();
     }
 
     return const {};
@@ -474,4 +481,3 @@ enum DIFramework {
   /// BLoC pattern
   bloc,
 }
-

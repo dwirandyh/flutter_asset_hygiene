@@ -18,10 +18,7 @@ class UnusedDetector {
   final CodeScanConfig config;
   final Logger logger;
 
-  UnusedDetector({
-    required this.config,
-    required this.logger,
-  });
+  UnusedDetector({required this.config, required this.logger});
 
   /// Detect unused code
   ///
@@ -123,17 +120,19 @@ class UnusedDetector {
         final category = _getCategoryForType(declaration.type);
         final message = _getMessageForUnusedType(declaration);
 
-        issues.add(CodeIssue(
-          category: category,
-          severity: _getSeverityForCategory(category),
-          symbol: declaration.name,
-          location: declaration.location,
-          message: message,
-          suggestion: _getSuggestionForUnused(declaration),
-          codeSnippet: _getCodeSnippet(declaration),
-          canAutoFix: true,
-          packageName: declaration.packageName,
-        ));
+        issues.add(
+          CodeIssue(
+            category: category,
+            severity: _getSeverityForCategory(category),
+            symbol: declaration.name,
+            location: declaration.location,
+            message: message,
+            suggestion: _getSuggestionForUnused(declaration),
+            codeSnippet: _getCodeSnippet(declaration),
+            canAutoFix: true,
+            packageName: declaration.packageName,
+          ),
+        );
       }
     }
 
@@ -174,17 +173,19 @@ class UnusedDetector {
 
       // Check if referenced (using enhanced checker)
       if (!refChecker.isReferenced(function.name)) {
-        issues.add(CodeIssue(
-          category: IssueCategory.unusedFunction,
-          severity: IssueSeverity.warning,
-          symbol: function.name,
-          location: function.location,
-          message: "Function '${function.name}' is never called",
-          suggestion: 'Remove the function or mark with @visibleForTesting',
-          codeSnippet: _getCodeSnippet(function),
-          canAutoFix: true,
-          packageName: function.packageName,
-        ));
+        issues.add(
+          CodeIssue(
+            category: IssueCategory.unusedFunction,
+            severity: IssueSeverity.warning,
+            symbol: function.name,
+            location: function.location,
+            message: "Function '${function.name}' is never called",
+            suggestion: 'Remove the function or mark with @visibleForTesting',
+            codeSnippet: _getCodeSnippet(function),
+            canAutoFix: true,
+            packageName: function.packageName,
+          ),
+        );
       }
     }
 
@@ -243,17 +244,19 @@ class UnusedDetector {
           !refChecker.isReferenced(member.qualifiedName)) {
         final category = _getCategoryForMember(member.type);
 
-        issues.add(CodeIssue(
-          category: category,
-          severity: IssueSeverity.warning,
-          symbol: member.qualifiedName,
-          location: member.location,
-          message: _getMessageForUnusedMember(member),
-          suggestion: _getSuggestionForUnused(member),
-          codeSnippet: _getCodeSnippet(member),
-          canAutoFix: !member.isOverride,
-          packageName: member.packageName,
-        ));
+        issues.add(
+          CodeIssue(
+            category: category,
+            severity: IssueSeverity.warning,
+            symbol: member.qualifiedName,
+            location: member.location,
+            message: _getMessageForUnusedMember(member),
+            suggestion: _getSuggestionForUnused(member),
+            codeSnippet: _getCodeSnippet(member),
+            canAutoFix: !member.isOverride,
+            packageName: member.packageName,
+          ),
+        );
       }
     }
 
@@ -287,17 +290,19 @@ class UnusedDetector {
 
       // Check if referenced (using enhanced checker)
       if (!refChecker.isReferenced(param.name)) {
-        issues.add(CodeIssue(
-          category: IssueCategory.unusedParameter,
-          severity: IssueSeverity.info,
-          symbol: param.name,
-          location: param.location,
-          message: "Parameter '${param.name}' is never used",
-          suggestion: 'Remove the parameter or prefix with underscore',
-          codeSnippet: _getCodeSnippet(param),
-          canAutoFix: false, // Parameters are harder to auto-fix
-          packageName: param.packageName,
-        ));
+        issues.add(
+          CodeIssue(
+            category: IssueCategory.unusedParameter,
+            severity: IssueSeverity.info,
+            symbol: param.name,
+            location: param.location,
+            message: "Parameter '${param.name}' is never used",
+            suggestion: 'Remove the parameter or prefix with underscore',
+            codeSnippet: _getCodeSnippet(param),
+            canAutoFix: false, // Parameters are harder to auto-fix
+            packageName: param.packageName,
+          ),
+        );
       }
     }
 
@@ -317,29 +322,33 @@ class UnusedDetector {
       for (final unusedImport in semanticReferences.getUnusedImports()) {
         if (unusedImport.uri == 'dart:core') continue;
 
-        issues.add(CodeIssue(
-          category: IssueCategory.unusedImport,
-          severity: IssueSeverity.info,
-          symbol: unusedImport.displayName,
-          location: unusedImport.location,
-          message: "Import '${unusedImport.uri}' is never used",
-          suggestion: 'Remove the unused import',
-          canAutoFix: true,
-        ));
+        issues.add(
+          CodeIssue(
+            category: IssueCategory.unusedImport,
+            severity: IssueSeverity.info,
+            symbol: unusedImport.displayName,
+            location: unusedImport.location,
+            message: "Import '${unusedImport.uri}' is never used",
+            suggestion: 'Remove the unused import',
+            canAutoFix: true,
+          ),
+        );
       }
 
       // Partially used imports (if enabled)
       if (config.semantic.reportPartialImports) {
         for (final partial in semanticReferences.getPartiallyUsedImports()) {
-          issues.add(CodeIssue(
-            category: IssueCategory.unusedImport,
-            severity: IssueSeverity.info,
-            symbol: partial.uri,
-            location: partial.location,
-            message: partial.message,
-            suggestion: partial.suggestion,
-            canAutoFix: true,
-          ));
+          issues.add(
+            CodeIssue(
+              category: IssueCategory.unusedImport,
+              severity: IssueSeverity.info,
+              symbol: partial.uri,
+              location: partial.location,
+              message: partial.message,
+              suggestion: partial.suggestion,
+              canAutoFix: true,
+            ),
+          );
         }
       }
     } else {
@@ -347,15 +356,17 @@ class UnusedDetector {
       for (final unusedImport in references.unusedImports) {
         if (unusedImport.uri == 'dart:core') continue;
 
-        issues.add(CodeIssue(
-          category: IssueCategory.unusedImport,
-          severity: IssueSeverity.info,
-          symbol: unusedImport.displayName,
-          location: unusedImport.location,
-          message: "Import '${unusedImport.uri}' is never used",
-          suggestion: 'Remove the unused import',
-          canAutoFix: true,
-        ));
+        issues.add(
+          CodeIssue(
+            category: IssueCategory.unusedImport,
+            severity: IssueSeverity.info,
+            symbol: unusedImport.displayName,
+            location: unusedImport.location,
+            message: "Import '${unusedImport.uri}' is never used",
+            suggestion: 'Remove the unused import',
+            canAutoFix: true,
+          ),
+        );
       }
     }
 
@@ -561,7 +572,11 @@ class UnusedDetector {
   }
 
   bool _severityMeetsMinimum(IssueSeverity severity, IssueSeverity minimum) {
-    const order = [IssueSeverity.info, IssueSeverity.warning, IssueSeverity.error];
+    const order = [
+      IssueSeverity.info,
+      IssueSeverity.warning,
+      IssueSeverity.error,
+    ];
     return order.indexOf(severity) >= order.indexOf(minimum);
   }
 }
@@ -636,4 +651,3 @@ class _ReferenceChecker {
     return false;
   }
 }
-

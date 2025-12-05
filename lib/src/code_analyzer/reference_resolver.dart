@@ -16,10 +16,7 @@ class ReferenceResolver {
   final CodeScanConfig config;
   final Logger logger;
 
-  ReferenceResolver({
-    required this.config,
-    required this.logger,
-  });
+  ReferenceResolver({required this.config, required this.logger});
 
   /// Resolve all references from a directory
   Future<ReferenceCollection> resolve(
@@ -33,11 +30,14 @@ class ReferenceResolver {
     final unusedImports = <UnusedImportInfo>[];
 
     // Find all Dart files
+    // Include generated files when resolving references because generated code
+    // legitimately references declared symbols (e.g., widgetbook, freezed, etc.)
     final dartFiles = await FileUtils.findDartFiles(
       directoryPath,
       includeTests: config.includeTests,
-      includeGenerated: false,
-      excludePatterns: config.effectiveExcludePatterns,
+      includeGenerated: true,
+      excludePatterns: config
+          .excludePatterns, // Don't use effectiveExcludePatterns to include generated
     );
 
     logger.debug('Resolving references in ${dartFiles.length} files');
@@ -89,13 +89,16 @@ class ReferenceResolver {
       );
       parseResult.unit.visitChildren(importVisitor);
 
-      final unusedImports = importVisitor.getUnusedImports().map(
-        (i) => UnusedImportInfo(
-          uri: i.uri,
-          location: i.location,
-          prefix: i.prefix,
-        ),
-      ).toList();
+      final unusedImports = importVisitor
+          .getUnusedImports()
+          .map(
+            (i) => UnusedImportInfo(
+              uri: i.uri,
+              location: i.location,
+              prefix: i.prefix,
+            ),
+          )
+          .toList();
 
       return FileReferenceResult(
         references: refVisitor.references,
@@ -124,10 +127,7 @@ class ReferenceResolver {
     for (final package in packages) {
       logger.debug('Resolving references in package: ${package.name}');
 
-      final collection = await resolve(
-        package.path,
-        packageName: package.name,
-      );
+      final collection = await resolve(package.path, packageName: package.name);
 
       allReferences.addAll(collection.references);
       allIdentifiers.addAll(collection.referencedIdentifiers);
@@ -249,5 +249,3 @@ class UnusedImportInfo {
     return uri;
   }
 }
-
-

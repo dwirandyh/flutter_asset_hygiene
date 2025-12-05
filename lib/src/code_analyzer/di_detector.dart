@@ -65,13 +65,15 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
       final result = _parseAnnotation(annotation);
       if (result != null) {
         registeredTypes.add(className);
-        registrations.add(DIRegistration(
-          typeName: className,
-          framework: result.framework,
-          registrationType: result.registrationType,
-          location: _locationFromNode(annotation),
-          packageName: packageName,
-        ));
+        registrations.add(
+          DIRegistration(
+            typeName: className,
+            framework: result.framework,
+            registrationType: result.registrationType,
+            location: _locationFromNode(annotation),
+            packageName: packageName,
+          ),
+        );
       }
     }
   }
@@ -85,13 +87,15 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
         // For Riverpod, the function generates a provider
         if (result.framework == DIFramework.riverpod) {
           registeredTypes.add(functionName);
-          registrations.add(DIRegistration(
-            typeName: functionName,
-            framework: result.framework,
-            registrationType: result.registrationType,
-            location: _locationFromNode(annotation),
-            packageName: packageName,
-          ));
+          registrations.add(
+            DIRegistration(
+              typeName: functionName,
+              framework: result.framework,
+              registrationType: result.registrationType,
+              location: _locationFromNode(annotation),
+              packageName: packageName,
+            ),
+          );
         }
       }
     }
@@ -159,7 +163,8 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
       final prefix = target.prefix.name;
       final identifier = target.identifier.name;
 
-      if (prefix == 'GetIt' && (identifier == 'I' || identifier == 'instance')) {
+      if (prefix == 'GetIt' &&
+          (identifier == 'I' || identifier == 'instance')) {
         _extractTypeArguments(node, DIFramework.getIt, isRetrieval: true);
         return;
       }
@@ -196,8 +201,12 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
         methodName == 'registerFactory' ||
         methodName == 'registerFactoryAsync') {
       final registrationType = _getRegistrationTypeFromMethod(methodName);
-      _extractTypeArguments(node, DIFramework.getIt,
-          isRetrieval: false, registrationType: registrationType);
+      _extractTypeArguments(
+        node,
+        DIFramework.getIt,
+        isRetrieval: false,
+        registrationType: registrationType,
+      );
     }
   }
 
@@ -211,14 +220,18 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
 
       // Provider patterns
       if (targetName == 'context' &&
-          (methodName == 'read' || methodName == 'watch' || methodName == 'select')) {
+          (methodName == 'read' ||
+              methodName == 'watch' ||
+              methodName == 'select')) {
         _extractTypeArguments(node, DIFramework.provider, isRetrieval: true);
         return;
       }
 
       // Riverpod patterns
       if (targetName == 'ref' &&
-          (methodName == 'read' || methodName == 'watch' || methodName == 'listen')) {
+          (methodName == 'read' ||
+              methodName == 'watch' ||
+              methodName == 'listen')) {
         _extractTypeArguments(node, DIFramework.riverpod, isRetrieval: true);
         return;
       }
@@ -287,21 +300,25 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
 
           if (isRetrieval) {
             retrievedTypes.add(typeName);
-            retrievals.add(DIRetrieval(
-              typeName: typeName,
-              framework: framework,
-              location: _locationFromNode(node),
-              packageName: packageName,
-            ));
+            retrievals.add(
+              DIRetrieval(
+                typeName: typeName,
+                framework: framework,
+                location: _locationFromNode(node),
+                packageName: packageName,
+              ),
+            );
           } else {
             registeredTypes.add(typeName);
-            registrations.add(DIRegistration(
-              typeName: typeName,
-              framework: framework,
-              registrationType: registrationType,
-              location: _locationFromNode(node),
-              packageName: packageName,
-            ));
+            registrations.add(
+              DIRegistration(
+                typeName: typeName,
+                framework: framework,
+                registrationType: registrationType,
+                location: _locationFromNode(node),
+                packageName: packageName,
+              ),
+            );
           }
 
           // Also track the element if we have semantic info
@@ -374,7 +391,8 @@ class DependencyInjectionDetector extends RecursiveAstVisitor<void> {
 
   /// Check if a type is used via DI
   bool isTypeUsedViaDI(String typeName) {
-    return registeredTypes.contains(typeName) || retrievedTypes.contains(typeName);
+    return registeredTypes.contains(typeName) ||
+        retrievedTypes.contains(typeName);
   }
 }
 
@@ -436,10 +454,9 @@ class DIDetectionResult {
   }
 
   factory DIDetectionResult.empty() => const DIDetectionResult(
-        registeredTypes: {},
-        retrievedTypes: {},
-        registrations: [],
-        retrievals: [],
-      );
+    registeredTypes: {},
+    retrievedTypes: {},
+    registrations: [],
+    retrievals: [],
+  );
 }
-

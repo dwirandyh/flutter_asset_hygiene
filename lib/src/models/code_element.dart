@@ -104,18 +104,18 @@ class CodeElement {
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'type': type.name,
-        'location': location.toJson(),
-        'isPublic': isPublic,
-        'isStatic': isStatic,
-        'isOverride': isOverride,
-        if (packageName != null) 'packageName': packageName,
-        if (parentName != null) 'parentName': parentName,
-        'annotations': annotations,
-        if (documentation != null) 'documentation': documentation,
-        'isExported': isExported,
-      };
+    'name': name,
+    'type': type.name,
+    'location': location.toJson(),
+    'isPublic': isPublic,
+    'isStatic': isStatic,
+    'isOverride': isOverride,
+    if (packageName != null) 'packageName': packageName,
+    if (parentName != null) 'parentName': parentName,
+    'annotations': annotations,
+    if (documentation != null) 'documentation': documentation,
+    'isExported': isExported,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -128,7 +128,8 @@ class CodeElement {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'CodeElement($qualifiedName, $type, ${location.filePath}:${location.line})';
+  String toString() =>
+      'CodeElement($qualifiedName, $type, ${location.filePath}:${location.line})';
 }
 
 /// Types of code elements
@@ -214,12 +215,12 @@ class SourceLocation {
   });
 
   Map<String, dynamic> toJson() => {
-        'filePath': filePath,
-        'line': line,
-        'column': column,
-        'offset': offset,
-        'length': length,
-      };
+    'filePath': filePath,
+    'line': line,
+    'column': column,
+    'offset': offset,
+    'length': length,
+  };
 
   @override
   String toString() => '$filePath:$line:$column';
@@ -247,11 +248,11 @@ class CodeReference {
   });
 
   Map<String, dynamic> toJson() => {
-        'elementId': elementId,
-        'location': location.toJson(),
-        'type': type.name,
-        if (packageName != null) 'packageName': packageName,
-      };
+    'elementId': elementId,
+    'location': location.toJson(),
+    'type': type.name,
+    if (packageName != null) 'packageName': packageName,
+  };
 }
 
 /// Types of references
@@ -323,21 +324,22 @@ class CodeIssue {
   });
 
   Map<String, dynamic> toJson() => {
-        'category': category.name,
-        'severity': severity.name,
-        'symbol': symbol,
-        'file': location.filePath,
-        'line': location.line,
-        'column': location.column,
-        'message': message,
-        if (suggestion != null) 'suggestion': suggestion,
-        if (codeSnippet != null) 'codeSnippet': codeSnippet,
-        'canAutoFix': canAutoFix,
-        if (packageName != null) 'packageName': packageName,
-      };
+    'category': category.name,
+    'severity': severity.name,
+    'symbol': symbol,
+    'file': location.filePath,
+    'line': location.line,
+    'column': location.column,
+    'message': message,
+    if (suggestion != null) 'suggestion': suggestion,
+    if (codeSnippet != null) 'codeSnippet': codeSnippet,
+    'canAutoFix': canAutoFix,
+    if (packageName != null) 'packageName': packageName,
+  };
 
   @override
-  String toString() => '[$category] $symbol at ${location.filePath}:${location.line}';
+  String toString() =>
+      '[$category] $symbol at ${location.filePath}:${location.line}';
 }
 
 /// Categories of unused code issues
@@ -378,4 +380,3 @@ enum IssueSeverity {
     }
   }
 }
-

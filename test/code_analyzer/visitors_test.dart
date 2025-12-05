@@ -70,7 +70,10 @@ enum Status {
           .where((d) => d.type == CodeElementType.enumValue)
           .toList();
       expect(enumValues.length, equals(3));
-      expect(enumValues.map((e) => e.name), containsAll(['active', 'inactive', 'pending']));
+      expect(
+        enumValues.map((e) => e.name),
+        containsAll(['active', 'inactive', 'pending']),
+      );
     });
 
     test('collects extension declarations', () {
@@ -182,7 +185,10 @@ class MyClass {
           .toList();
 
       expect(fields.length, equals(3));
-      expect(fields.map((f) => f.name), containsAll(['name', 'count', '_privateField']));
+      expect(
+        fields.map((f) => f.name),
+        containsAll(['name', 'count', '_privateField']),
+      );
     });
 
     test('collects constructors', () {
@@ -213,7 +219,10 @@ void myFunction(String required, {int? optional, bool flag = false}) {}
           .toList();
 
       expect(params.length, equals(3));
-      expect(params.map((p) => p.name), containsAll(['required', 'optional', 'flag']));
+      expect(
+        params.map((p) => p.name),
+        containsAll(['required', 'optional', 'flag']),
+      );
     });
 
     test('detects override annotation', () {
@@ -407,11 +416,15 @@ import 'another.dart' hide unused;
       expect(pathImport.prefix, equals('p'));
       expect(pathImport.packageName, equals('path'));
 
-      final localImport = result.imports.firstWhere((i) => i.uri == 'local.dart');
+      final localImport = result.imports.firstWhere(
+        (i) => i.uri == 'local.dart',
+      );
       expect(localImport.isRelative, isTrue);
       expect(localImport.shownNames, contains('helper'));
 
-      final anotherImport = result.imports.firstWhere((i) => i.uri == 'another.dart');
+      final anotherImport = result.imports.firstWhere(
+        (i) => i.uri == 'another.dart',
+      );
       expect(anotherImport.hiddenNames, contains('unused'));
     });
 
@@ -477,7 +490,10 @@ void main() {
       // This is a limitation - we can't detect partially used show combinators
       // without more sophisticated analysis
       expect(result.imports.length, equals(1));
-      expect(result.imports.first.shownNames, containsAll(['usedHelper', 'unusedHelper']));
+      expect(
+        result.imports.first.shownNames,
+        containsAll(['usedHelper', 'unusedHelper']),
+      );
     });
   });
 }
@@ -502,4 +518,3 @@ ImportVisitor _parseImports(String code) {
   parseResult.unit.visitChildren(visitor);
   return visitor;
 }
-

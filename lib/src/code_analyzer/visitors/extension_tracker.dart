@@ -34,10 +34,7 @@ class ExtensionTracker extends RecursiveAstVisitor<void> {
   /// The file being visited
   final String filePath;
 
-  ExtensionTracker({
-    required this.resolvedUnit,
-    required this.filePath,
-  });
+  ExtensionTracker({required this.resolvedUnit, required this.filePath});
 
   @override
   void visitExtensionDeclaration(ExtensionDeclaration node) {
@@ -102,15 +99,17 @@ class ExtensionTracker extends RecursiveAstVisitor<void> {
         usedExtensions.add(extensionName);
 
         // Track usage details
-        extensionUsages.putIfAbsent(extensionName, () => []).add(
-          ExtensionUsage(
-            extensionName: extensionName,
-            memberName: element.name ?? '',
-            location: _locationFromNode(node),
-            isImplicit: _isImplicitUsage(node),
-            extendedType: enclosing.extendedType.toString(),
-          ),
-        );
+        extensionUsages
+            .putIfAbsent(extensionName, () => [])
+            .add(
+              ExtensionUsage(
+                extensionName: extensionName,
+                memberName: element.name ?? '',
+                location: _locationFromNode(node),
+                isImplicit: _isImplicitUsage(node),
+                extendedType: enclosing.extendedType.toString(),
+              ),
+            );
       }
     }
   }
@@ -205,7 +204,8 @@ class ExtensionTrackingResult {
   });
 
   /// Get unused extensions
-  Set<String> get unusedExtensions => declaredExtensions.difference(usedExtensions);
+  Set<String> get unusedExtensions =>
+      declaredExtensions.difference(usedExtensions);
 
   /// Merge with another result
   ExtensionTrackingResult merge(ExtensionTrackingResult other) {
@@ -225,4 +225,3 @@ class ExtensionTrackingResult {
     );
   }
 }
-

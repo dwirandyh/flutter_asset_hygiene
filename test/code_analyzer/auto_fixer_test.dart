@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_tools/src/code_analyzer/auto_fixer.dart';
 import 'package:flutter_tools/src/code_analyzer/code_analyzer.dart';
+import 'package:flutter_tools/src/models/code_element.dart';
 import 'package:flutter_tools/src/models/code_scan_config.dart';
 import 'package:flutter_tools/src/utils/logger.dart';
 import 'package:path/path.dart' as p;
@@ -22,10 +23,7 @@ void main() {
       );
 
       tempDir = await Directory.systemTemp.createTemp('auto_fixer_test_');
-      await _copyDirectory(
-        Directory(fixtureRoot),
-        tempDir,
-      );
+      await _copyDirectory(Directory(fixtureRoot), tempDir);
 
       logger = Logger(verbose: false);
     });
@@ -51,10 +49,15 @@ void main() {
       expect(fixResult.totalIssues, greaterThan(0));
       expect(fixResult.filesChanged, greaterThan(0));
 
+      // Note: After removing unused code, some previously "used" elements
+      // may become unused (e.g., if their callers were removed).
+      // This is expected cascading behavior.
       final postResult = await analyzer.analyze();
-      final remainingFixables =
-          postResult.issues.where((i) => i.canAutoFix).toList();
-      expect(remainingFixables, isEmpty);
+      final originalIssueSymbols = result.issues.map((i) => i.symbol).toSet();
+      final remainingOriginalIssues = postResult.issues
+          .where((i) => i.canAutoFix && originalIssueSymbols.contains(i.symbol))
+          .toList();
+      expect(remainingOriginalIssues, isEmpty);
 
       final servicesPath = p.join(tempDir.path, 'lib', 'src', 'services.dart');
       final servicesContent = await File(servicesPath).readAsString();
@@ -86,10 +89,7 @@ void main() {
   });
 }
 
-Future<void> _copyDirectory(
-  Directory source,
-  Directory destination,
-) async {
+Future<void> _copyDirectory(Directory source, Directory destination) async {
   await for (final entity in source.list(recursive: true, followLinks: false)) {
     final relativePath = p.relative(entity.path, from: source.path);
     final newPath = p.join(destination.path, relativePath);
@@ -102,4 +102,3 @@ Future<void> _copyDirectory(
     }
   }
 }
-

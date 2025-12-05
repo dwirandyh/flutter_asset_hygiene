@@ -82,7 +82,9 @@ class CodeScanResult {
   /// Convert to CSV
   String toCsv() {
     final buffer = StringBuffer();
-    buffer.writeln('category,severity,symbol,file,line,column,message,suggestion');
+    buffer.writeln(
+      'category,severity,symbol,file,line,column,message,suggestion',
+    );
 
     for (final issue in issues) {
       final escapedMessage = _escapeCsv(issue.message);
@@ -497,15 +499,14 @@ class ScanStatistics {
   }
 
   Map<String, dynamic> toJson() => {
-        'filesScanned': filesScanned,
-        'totalIssues': totalIssues,
-        'unusedClasses': unusedClasses,
-        'unusedFunctions': unusedFunctions,
-        'unusedParameters': unusedParameters,
-        'unusedImports': unusedImports,
-        'unusedMembers': unusedMembers,
-        'unusedExports': unusedExports,
-        'scanDurationMs': scanDurationMs,
-      };
+    'filesScanned': filesScanned,
+    'totalIssues': totalIssues,
+    'unusedClasses': unusedClasses,
+    'unusedFunctions': unusedFunctions,
+    'unusedParameters': unusedParameters,
+    'unusedImports': unusedImports,
+    'unusedMembers': unusedMembers,
+    'unusedExports': unusedExports,
+    'scanDurationMs': scanDurationMs,
+  };
 }
-

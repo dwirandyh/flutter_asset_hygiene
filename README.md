@@ -13,13 +13,18 @@ CLI utility that finds unused assets and dead code in Flutter/Dart projects, inc
 - Optional deletion flow with confirmation prompt.
 
 ### Unused Code Detector (`unused-code` command)
-- Detects unused classes, mixins, extensions, enums, and typedefs.
-- Finds unused functions, methods, getters, setters, and constructors.
-- Identifies unused imports, exports, parameters, and fields.
-- Respects `@override`, `@visibleForTesting`, and other annotations.
-- Cross-package analysis for Melos monorepos.
-- YAML configuration support for fine-grained control.
-- Multiple outputs: console, JSON, CSV, and HTML reports.
+- **Semantic Analysis** (default): Full type resolution with ~2-5% false positive rate
+- **AST-only Mode** (fast): Name-based matching, ~15-25% false positive rate
+- Detects unused classes, mixins, extensions, enums, and typedefs
+- Finds unused functions, methods, getters, setters, and constructors
+- Identifies unused imports, exports, parameters, and fields
+- **Extension Method Tracking**: Detects implicit extension usage (e.g., `"hello".capitalize()`)
+- **DI Pattern Detection**: GetIt, injectable, riverpod, provider, BLoC patterns
+- **Granular Import Tracking**: Per-symbol usage with partial import suggestions
+- Respects `@override`, `@visibleForTesting`, and other annotations
+- Cross-package analysis for Melos monorepos
+- **Auto-fix**: Remove unused code with `--fix` or preview with `--fix-dry-run`
+- Multiple outputs: console, JSON, CSV, and HTML reports
 
 ## Requirements
 - Dart SDK ^3.8.1
@@ -123,6 +128,20 @@ unused_code:
     - "**/*.freezed.dart"
     - "**/generated/**"
 
+  # Semantic analysis configuration
+  semantic:
+    enabled: true              # Enable semantic analysis (default: true)
+    track_extensions: true     # Track extension method usage
+    detect_di: true            # Detect DI patterns
+    di_frameworks:             # DI frameworks to detect
+      - getit
+      - injectable
+      - riverpod
+      - provider
+      - bloc
+    track_import_symbols: true # Track per-symbol import usage
+    report_partial_imports: true # Report partially used imports
+
   # Detection rules
   rules:
     unused_classes:
@@ -186,8 +205,47 @@ unused_code:
 ### Unused Code Detector
 1. **Collection Phase**: Scans all Dart files and collects declarations (classes, functions, etc.).
 2. **Resolution Phase**: Re-scans to resolve all references and track usage.
-3. **Detection Phase**: Compares declarations vs references, applying exclusion rules.
-4. **Reporting Phase**: Generates reports in the requested format.
+3. **Semantic Analysis Phase** (if enabled): Uses `AnalysisContextCollection` for:
+   - Full type resolution across files
+   - Extension method tracking (implicit calls)
+   - DI pattern detection
+   - Per-symbol import usage
+4. **Detection Phase**: Compares declarations vs references, applying exclusion rules.
+5. **Reporting Phase**: Generates reports in the requested format.
+
+## Analysis Modes
+
+### Semantic Mode (Default)
+Uses the Dart analyzer's full type resolution for accurate results:
+- **Extension Methods**: Detects `"hello".capitalize()` → marks `StringExtension` as used
+- **DI Patterns**: Recognizes GetIt, injectable, riverpod, provider, BLoC registrations
+- **Import Tracking**: Suggests `import 'x.dart' show A, B;` → `import 'x.dart' show A;`
+- **Trade-off**: ~3-5x slower than AST-only mode
+
+### AST-only Mode (Fast)
+Enable with `semantic.enabled: false` in YAML config:
+- Name-based matching only
+- Faster (~1x baseline)
+- Higher false positive rate (~15-25%)
+
+## Supported DI Patterns
+
+The semantic analyzer detects usage through:
+
+| Framework | Patterns Detected |
+|-----------|-------------------|
+| **GetIt** | `GetIt.I<T>()`, `GetIt.instance<T>()`, `locator<T>()`, `sl<T>()` |
+| **Injectable** | `@injectable`, `@singleton`, `@lazySingleton` |
+| **Riverpod** | `@riverpod`, `@Riverpod()`, Provider patterns |
+| **Provider** | `Provider<T>`, `ChangeNotifierProvider<T>` |
+| **BLoC** | `BlocProvider<T>`, `RepositoryProvider<T>` |
+
+## Known Limitations
+
+1. **Reflection/mirrors**: Usage via `dart:mirrors` is not detected
+2. **Dynamic invocation**: `obj.noSuchMethod()` patterns are not detected
+3. **Code generation**: Generated code that hasn't been generated yet won't be analyzed
+4. **Auto-fix**: Some complex cases may require manual review after auto-fix
 
 ## License
 MIT

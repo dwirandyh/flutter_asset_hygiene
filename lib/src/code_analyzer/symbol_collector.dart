@@ -14,10 +14,7 @@ class SymbolCollector {
   final CodeScanConfig config;
   final Logger logger;
 
-  SymbolCollector({
-    required this.config,
-    required this.logger,
-  });
+  SymbolCollector({required this.config, required this.logger});
 
   /// Collect all declarations from a directory
   Future<SymbolCollection> collect(
@@ -31,7 +28,8 @@ class SymbolCollector {
     final dartFiles = await FileUtils.findDartFiles(
       directoryPath,
       includeTests: config.includeTests,
-      includeGenerated: false, // Always exclude generated for unused code analysis
+      includeGenerated:
+          false, // Always exclude generated for unused code analysis
       excludePatterns: config.effectiveExcludePatterns,
     );
 
@@ -94,10 +92,7 @@ class SymbolCollector {
     for (final package in packages) {
       logger.debug('Collecting symbols from package: ${package.name}');
 
-      final collection = await collect(
-        package.path,
-        packageName: package.name,
-      );
+      final collection = await collect(package.path, packageName: package.name);
 
       allDeclarations.addAll(collection.declarations);
       allFileDeclarations.addAll(collection.fileDeclarations);
@@ -145,7 +140,8 @@ class SymbolCollection {
   List<CodeElement> get mixins => byType(CodeElementType.mixinDeclaration);
 
   /// Get all extensions
-  List<CodeElement> get extensions => byType(CodeElementType.extensionDeclaration);
+  List<CodeElement> get extensions =>
+      byType(CodeElementType.extensionDeclaration);
 
   /// Get all enums
   List<CodeElement> get enums => byType(CodeElementType.enumDeclaration);
@@ -200,4 +196,3 @@ class PackageInfo {
     this.isRoot = false,
   });
 }
-

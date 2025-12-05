@@ -24,10 +24,8 @@ class CodeAnalyzer {
   /// Semantic analyzer for full type resolution (lazy initialized)
   SemanticAnalyzer? _semanticAnalyzer;
 
-  CodeAnalyzer({
-    required this.config,
-    Logger? logger,
-  }) : logger = logger ?? Logger(verbose: config.verbose);
+  CodeAnalyzer({required this.config, Logger? logger})
+    : logger = logger ?? Logger(verbose: config.verbose);
 
   /// Whether semantic analysis is enabled
   bool get useSemanticAnalysis => config.semantic.enabled;
@@ -111,8 +109,12 @@ class CodeAnalyzer {
       diResult = semanticResult.diResult;
 
       if (semanticRefs != null) {
-        logger.debug('Found ${semanticRefs.usedExtensions.length} extension usages');
-        logger.debug('Found ${semanticRefs.usedElementIds.length} element usages');
+        logger.debug(
+          'Found ${semanticRefs.usedExtensions.length} extension usages',
+        );
+        logger.debug(
+          'Found ${semanticRefs.usedElementIds.length} element usages',
+        );
       }
 
       if (diResult != null) {
@@ -146,13 +148,17 @@ class CodeAnalyzer {
   }
 
   /// Run semantic analysis on a directory.
-  Future<_SemanticAnalysisResult> _runSemanticAnalysis(String directoryPath) async {
+  Future<_SemanticAnalysisResult> _runSemanticAnalysis(
+    String directoryPath,
+  ) async {
     try {
       _semanticAnalyzer ??= SemanticAnalyzer(config: config, logger: logger);
       await _semanticAnalyzer!.initialize([directoryPath]);
 
       if (!_semanticAnalyzer!.isAvailable) {
-        logger.warning('Semantic analysis not available, falling back to AST-only');
+        logger.warning(
+          'Semantic analysis not available, falling back to AST-only',
+        );
         return _SemanticAnalysisResult(references: null, diResult: null);
       }
 
@@ -230,20 +236,15 @@ class CodeAnalyzer {
     // Add root package if it has Dart code
     final rootLibPath = p.join(config.rootPath, 'lib');
     if (Directory(rootLibPath).existsSync()) {
-      packages.add(PackageInfo(
-        name: workspace.name,
-        path: config.rootPath,
-        isRoot: true,
-      ));
+      packages.add(
+        PackageInfo(name: workspace.name, path: config.rootPath, isRoot: true),
+      );
       packagePaths[workspace.name] = config.rootPath;
     }
 
     // Add workspace packages
     for (final pkg in workspace.packages) {
-      packages.add(PackageInfo(
-        name: pkg.name,
-        path: pkg.path,
-      ));
+      packages.add(PackageInfo(name: pkg.name, path: pkg.path));
       packagePaths[pkg.name] = pkg.path;
     }
 
@@ -270,7 +271,9 @@ class CodeAnalyzer {
       diResult = semanticResult.diResult;
 
       if (semanticRefs != null) {
-        logger.debug('Found ${semanticRefs.usedExtensions.length} extension usages');
+        logger.debug(
+          'Found ${semanticRefs.usedExtensions.length} extension usages',
+        );
       }
 
       if (diResult != null) {
@@ -322,10 +325,7 @@ class CodeAnalyzer {
     final packages = <PackageInfo>[];
 
     for (final pkg in workspace.packages) {
-      packages.add(PackageInfo(
-        name: pkg.name,
-        path: pkg.path,
-      ));
+      packages.add(PackageInfo(name: pkg.name, path: pkg.path));
       packagePaths[pkg.name] = pkg.path;
     }
 
@@ -393,4 +393,3 @@ class _SemanticAnalysisResult {
     required this.diResult,
   });
 }
-

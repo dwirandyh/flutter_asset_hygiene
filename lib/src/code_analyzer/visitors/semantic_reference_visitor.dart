@@ -144,17 +144,21 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
         final extensionName = enclosing.name;
         if (extensionName != null) {
           usedExtensions.add(extensionName);
-          logger.debug('Found extension usage: $extensionName.${node.methodName.name}');
+          logger.debug(
+            'Found extension usage: $extensionName.${node.methodName.name}',
+          );
 
           // Track the extension as implicitly used
-          references.add(SemanticReference(
-            elementId: _getElementId(enclosing),
-            libraryUri: enclosing.library.source.uri.toString(),
-            location: _locationFromNode(node),
-            type: ReferenceType.invocation,
-            packageName: packageName,
-            isImplicit: true,
-          ));
+          references.add(
+            SemanticReference(
+              elementId: _getElementId(enclosing),
+              libraryUri: enclosing.library.source.uri.toString(),
+              location: _locationFromNode(node),
+              type: ReferenceType.invocation,
+              packageName: packageName,
+              isImplicit: true,
+            ),
+          );
         }
       }
     }
@@ -276,13 +280,15 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
     }
 
     // Create semantic reference
-    references.add(SemanticReference(
-      elementId: elementId,
-      libraryUri: libraryUri,
-      location: _locationFromNode(node),
-      type: _determineReferenceType(node),
-      packageName: packageName,
-    ));
+    references.add(
+      SemanticReference(
+        elementId: elementId,
+        libraryUri: libraryUri,
+        location: _locationFromNode(node),
+        type: _determineReferenceType(node),
+        packageName: packageName,
+      ),
+    );
   }
 
   /// Get a unique ID for an element.
@@ -335,7 +341,9 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
     if (methodName == 'call' || methodName == 'get') {
       if (target is SimpleIdentifier) {
         final targetName = target.name;
-        if (targetName == 'GetIt' || targetName == 'locator' || targetName == 'sl') {
+        if (targetName == 'GetIt' ||
+            targetName == 'locator' ||
+            targetName == 'sl') {
           _extractDITypeArgument(node, DIFramework.getIt);
         }
       } else if (target is PrefixedIdentifier) {
@@ -350,7 +358,8 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
     if (target is PrefixedIdentifier) {
       final prefix = target.prefix.name;
       final identifier = target.identifier.name;
-      if (prefix == 'GetIt' && (identifier == 'I' || identifier == 'instance')) {
+      if (prefix == 'GetIt' &&
+          (identifier == 'I' || identifier == 'instance')) {
         _extractDITypeArgument(node, DIFramework.getIt);
       }
     }
@@ -369,13 +378,15 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
             _trackElementUsage(element, node);
           }
 
-          diRegistrations.add(DIRegistration(
-            typeName: typeName,
-            framework: framework,
-            registrationType: DIRegistrationType.factory,
-            location: _locationFromNode(node),
-            packageName: packageName,
-          ));
+          diRegistrations.add(
+            DIRegistration(
+              typeName: typeName,
+              framework: framework,
+              registrationType: DIRegistrationType.factory,
+              location: _locationFromNode(node),
+              packageName: packageName,
+            ),
+          );
 
           logger.debug('Found DI usage: $framework<$typeName>');
         }
@@ -427,13 +438,15 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       }
 
       if (typeName != null) {
-        diRegistrations.add(DIRegistration(
-          typeName: typeName,
-          framework: framework,
-          registrationType: registrationType,
-          location: _locationFromNode(node),
-          packageName: packageName,
-        ));
+        diRegistrations.add(
+          DIRegistration(
+            typeName: typeName,
+            framework: framework,
+            registrationType: registrationType,
+            location: _locationFromNode(node),
+            packageName: packageName,
+          ),
+        );
 
         logger.debug('Found DI annotation: @$name on $typeName');
       }
@@ -447,7 +460,9 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
     if (node is NamedType) {
       return ReferenceType.typeUsage;
     }
-    if (node is ExtendsClause || node is ImplementsClause || node is WithClause) {
+    if (node is ExtendsClause ||
+        node is ImplementsClause ||
+        node is WithClause) {
       return ReferenceType.inheritance;
     }
     if (node is PropertyAccess) {
@@ -489,4 +504,3 @@ class _ImportInfo {
     required this.location,
   });
 }
-

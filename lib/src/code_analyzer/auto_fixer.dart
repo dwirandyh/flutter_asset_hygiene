@@ -12,10 +12,7 @@ class AutoFixer {
   final CodeScanConfig config;
   final Logger logger;
 
-  AutoFixer({
-    required this.config,
-    required this.logger,
-  });
+  AutoFixer({required this.config, required this.logger});
 
   /// Apply fixes for all auto-fixable issues in [scanResult].
   ///
@@ -128,13 +125,7 @@ class AutoFixer {
         );
         continue;
       }
-      ranges.add(
-        _FixRange(
-          offset: offset,
-          length: length,
-          issue: issue,
-        ),
-      );
+      ranges.add(_FixRange(offset: offset, length: length, issue: issue));
     }
 
     return _mergeOverlapping(ranges);
@@ -152,8 +143,9 @@ class AutoFixer {
 
       if (current.offset <= last.end) {
         final extendedEnd = current.end > last.end ? current.end : last.end;
-        merged[merged.length - 1] =
-            last.copyWith(length: extendedEnd - last.offset);
+        merged[merged.length - 1] = last.copyWith(
+          length: extendedEnd - last.offset,
+        );
       } else {
         merged.add(current);
       }
@@ -221,12 +213,12 @@ class AutoFixResult {
   });
 
   factory AutoFixResult.empty({bool dryRun = false}) => AutoFixResult(
-        fileIssues: const {},
-        skippedIssues: const [],
-        filesChanged: 0,
-        appliedRanges: 0,
-        dryRun: dryRun,
-      );
+    fileIssues: const {},
+    skippedIssues: const [],
+    filesChanged: 0,
+    appliedRanges: 0,
+    dryRun: dryRun,
+  );
 
   int get totalIssues =>
       fileIssues.values.fold(0, (sum, list) => sum + list.length);
@@ -237,11 +229,7 @@ class _FixRange {
   final int length;
   final CodeIssue issue;
 
-  _FixRange({
-    required this.offset,
-    required this.length,
-    required this.issue,
-  });
+  _FixRange({required this.offset, required this.length, required this.issue});
 
   int get end => offset + length;
 
@@ -260,4 +248,3 @@ class _Range {
 
   const _Range({required this.start, required this.end});
 }
-

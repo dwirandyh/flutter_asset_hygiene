@@ -158,14 +158,20 @@ void main() {
         minSeverity: IssueSeverity.info,
       );
 
-      final warningAnalyzer = CodeAnalyzer(config: warningConfig, logger: logger);
+      final warningAnalyzer = CodeAnalyzer(
+        config: warningConfig,
+        logger: logger,
+      );
       final infoAnalyzer = CodeAnalyzer(config: infoConfig, logger: logger);
 
       final warningResult = await warningAnalyzer.analyze();
       final infoResult = await infoAnalyzer.analyze();
 
       // Info config should have more issues (includes info-level)
-      expect(infoResult.issues.length, greaterThanOrEqualTo(warningResult.issues.length));
+      expect(
+        infoResult.issues.length,
+        greaterThanOrEqualTo(warningResult.issues.length),
+      );
     });
 
     test('outputs valid JSON', () async {
@@ -195,7 +201,12 @@ void main() {
 
       final csv = result.toCsv();
 
-      expect(csv, contains('category,severity,symbol,file,line,column,message,suggestion'));
+      expect(
+        csv,
+        contains(
+          'category,severity,symbol,file,line,column,message,suggestion',
+        ),
+      );
       expect(csv.split('\n').length, greaterThan(1));
     });
 
@@ -292,11 +303,7 @@ void main() {
       final element = CodeElement(
         name: 'TestClass',
         type: CodeElementType.classDeclaration,
-        location: SourceLocation(
-          filePath: 'lib/test.dart',
-          line: 1,
-          column: 1,
-        ),
+        location: SourceLocation(filePath: 'lib/test.dart', line: 1, column: 1),
         annotations: ['visibleForTesting', 'immutable'],
       );
 
@@ -334,4 +341,3 @@ void main() {
     });
   });
 }
-
