@@ -48,9 +48,9 @@ class AssetsCommand extends Command<int> {
       ..addOption(
         'format',
         abbr: 'f',
-        help: 'Output format: console, json, csv',
+        help: 'Output format: console, json, csv, html',
         defaultsTo: 'console',
-        allowed: ['console', 'json', 'csv'],
+        allowed: ['console', 'json', 'csv', 'html'],
       )
       ..addOption(
         'output',
@@ -171,6 +171,9 @@ class AssetsCommand extends Command<int> {
       case OutputFormat.csv:
         await _outputCsv(result, config, logger);
         break;
+      case OutputFormat.html:
+        await _outputHtml(result, config, logger);
+        break;
       case OutputFormat.console:
         _outputConsole(result, config, logger);
         break;
@@ -208,6 +211,23 @@ class AssetsCommand extends Command<int> {
       logger.success('Results written to $outputPath');
     } else {
       print(csv);
+    }
+  }
+
+  /// Output results as HTML
+  Future<void> _outputHtml(
+    ScanResult result,
+    ScanConfig config,
+    Logger logger,
+  ) async {
+    final html = result.toHtml();
+
+    final outputPath = argResults!['output'] as String?;
+    if (outputPath != null) {
+      await File(outputPath).writeAsString(html);
+      logger.success('Results written to $outputPath');
+    } else {
+      print(html);
     }
   }
 
