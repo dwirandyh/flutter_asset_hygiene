@@ -110,10 +110,14 @@ class UnusedDetector {
       // Check if referenced (using enhanced checker)
       if (!refChecker.isReferenced(declaration.name) &&
           !refChecker.isTypeReferenced(declaration.name)) {
-        // For extensions, also check semantic extension usage
+        // For extensions, also check semantic extension usage or fallback to
+        // member usage (helps when semantic analysis fails).
         if (declaration.type == CodeElementType.extensionDeclaration) {
-          if (refChecker.isExtensionUsed(declaration.name)) {
-            continue; // Extension is used implicitly
+          final extensionUsed =
+              refChecker.isExtensionUsed(declaration.name) ||
+              _isExtensionMemberUsed(symbols, declaration.name, refChecker);
+          if (extensionUsed) {
+            continue; // Extension is used implicitly via its members
           }
         }
 
@@ -650,4 +654,29 @@ class _ReferenceChecker {
     }
     return false;
   }
+}
+
+/// Check whether any member of an extension is referenced (AST fallback).
+bool _isExtensionMemberUsed(
+  SymbolCollection symbols,
+  String extensionName,
+  _ReferenceChecker refChecker,
+) {
+  final members = symbols.declarations.where(
+    (d) =>
+        d.parentName == extensionName &&
+        (d.type == CodeElementType.method ||
+            d.type == CodeElementType.getter ||
+            d.type == CodeElementType.setter ||
+            d.type == CodeElementType.field),
+  );
+
+  for (final member in members) {
+    if (refChecker.isReferenced(member.name) ||
+        refChecker.isReferenced(member.qualifiedName)) {
+      return true;
+    }
+  }
+
+  return false;
 }

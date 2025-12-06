@@ -190,15 +190,21 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
   void visitConstructorDeclaration(ConstructorDeclaration node) {
     if (_currentParent == null) return;
 
-    final name = node.name?.lexeme ?? '';
-    final fullName = name.isEmpty ? _currentParent! : '$_currentParent.$name';
+    // Use the raw constructor name (without repeating the class name) so
+    // references like `Class.named` match our stored identifier.
+    final ctorName = node.name?.lexeme ?? '';
+    // For unnamed constructors, we still want a usable name; use the class name.
+    final elementName = ctorName.isEmpty ? _currentParent! : ctorName;
+    final parameterParentName =
+        ctorName.isEmpty ? _currentParent! : '$_currentParent.$ctorName';
     final isOverride = _hasOverrideAnnotation(node.metadata);
 
     final element = CodeElement(
-      name: fullName,
+      name: elementName,
       type: CodeElementType.constructor,
       location: _locationFromNode(node),
-      isPublic: !fullName.startsWith('_') && !name.startsWith('_'),
+      // Public if neither the class nor the constructor name is private
+      isPublic: !elementName.startsWith('_') && !_currentParent!.startsWith('_'),
       isOverride: isOverride,
       parentName: _currentParent,
       annotations: _extractAnnotations(node.metadata),
@@ -208,7 +214,7 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
     declarations.add(element);
 
     // Visit parameters
-    _visitParameters(node.parameters, fullName);
+    _visitParameters(node.parameters, parameterParentName);
 
     super.visitConstructorDeclaration(node);
   }
