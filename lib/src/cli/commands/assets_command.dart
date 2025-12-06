@@ -18,7 +18,7 @@ class AssetsCommand extends Command<int> {
   final String description = 'Scan for unused assets in Flutter/Dart projects';
 
   @override
-  final String invocation = 'flutter_tools assets [options]';
+  final String invocation = 'flutter_hygiene assets [options]';
 
   AssetsCommand() {
     argParser

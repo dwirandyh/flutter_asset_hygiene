@@ -109,6 +109,7 @@ Unused code flags:
 - `--fix-dry-run` show what would be removed without making changes
 - `--fix` auto-remove unused code (dangerous!)
 - `--verbose, -v` show verbose output
+- `--no-color` disable colored output
 - `--exclude, -e` comma-separated glob patterns to exclude
 
 ## YAML Configuration

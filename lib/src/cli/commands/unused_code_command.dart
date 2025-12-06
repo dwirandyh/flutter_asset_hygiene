@@ -22,7 +22,7 @@ class UnusedCodeCommand extends Command<int> {
       'Detect unused code (classes, functions, imports, etc.) in Flutter/Dart projects';
 
   @override
-  final String invocation = 'flutter_tools unused-code [options]';
+  final String invocation = 'flutter_hygiene unused-code [options]';
 
   UnusedCodeCommand() {
     argParser
