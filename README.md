@@ -82,7 +82,7 @@ dart run lib/main.dart unused-code
 # Scan specific path
 dart run lib/main.dart unused-code --path /path/to/project
 
-# Include info-level issues (parameters, imports)
+# Include info-level issues (parameters)
 dart run lib/main.dart unused-code --severity info
 
 # JSON output

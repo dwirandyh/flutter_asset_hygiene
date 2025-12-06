@@ -15,7 +15,7 @@ class CliRunner {
   Future<int> run() async {
     final runner =
         CommandRunner<int>(
-            'flutter_tools',
+            'flutter_hygiene',
             'Flutter Asset Hygiene - Find unused assets and code in Flutter/Dart projects',
           )
           ..addCommand(AssetsCommand())
@@ -36,7 +36,7 @@ class CliRunner {
       }
 
       if (arguments.contains('--version')) {
-        print('flutter_tools v0.3.0');
+        print('flutter_hygiene v0.2.0');
         return 0;
       }
 

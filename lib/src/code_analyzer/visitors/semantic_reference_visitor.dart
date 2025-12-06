@@ -48,6 +48,12 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
   /// Map of import URI to ImportInfo
   final Map<String, _ImportInfo> _imports = {};
 
+  /// Map of import URI to the set of library URIs it provides access to
+  final Map<String, Set<String>> _importToLibraries = {};
+
+  /// Map of library URI to import URIs that provide access to it
+  final Map<String, Set<String>> _libraryToImports = {};
+
   SemanticReferenceVisitor({
     required this.filePath,
     required this.resolvedUnit,
@@ -95,6 +101,33 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       location: _locationFromNode(node),
     );
 
+    // Build mapping from import URI to the libraries it provides access to
+    // This is crucial for tracking which import provides a given element
+    final importElement = node.element;
+    if (importElement != null) {
+      final importedLibrary = importElement.importedLibrary;
+      if (importedLibrary != null) {
+        final libraryUris = <String>{};
+
+        // Add the directly imported library
+        libraryUris.add(importedLibrary.source.uri.toString());
+
+        // Add all re-exported libraries (transitive exports)
+        _collectExportedLibraries(
+          importedLibrary,
+          libraryUris,
+          <LibraryElement>{},
+        );
+
+        _importToLibraries[uri] = libraryUris;
+
+        // Build reverse mapping
+        for (final libUri in libraryUris) {
+          _libraryToImports.putIfAbsent(libUri, () => {}).add(uri);
+        }
+      }
+    }
+
     super.visitImportDirective(node);
   }
 
@@ -139,27 +172,31 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       _trackElementUsage(element, node);
 
       // Check for extension method usage
-      final enclosing = element.enclosingElement3;
-      if (enclosing is ExtensionElement) {
-        final extensionName = enclosing.name;
-        if (extensionName != null) {
-          usedExtensions.add(extensionName);
-          logger.debug(
-            'Found extension usage: $extensionName.${node.methodName.name}',
-          );
+      try {
+        final enclosing = element.enclosingElement3;
+        if (enclosing is ExtensionElement) {
+          final extensionName = enclosing.name;
+          if (extensionName != null) {
+            usedExtensions.add(extensionName);
+            logger.debug(
+              'Found extension usage: $extensionName.${node.methodName.name}',
+            );
 
-          // Track the extension as implicitly used
-          references.add(
-            SemanticReference(
-              elementId: _getElementId(enclosing),
-              libraryUri: enclosing.library.source.uri.toString(),
-              location: _locationFromNode(node),
-              type: ReferenceType.invocation,
-              packageName: packageName,
-              isImplicit: true,
-            ),
-          );
+            // Track the extension as implicitly used
+            references.add(
+              SemanticReference(
+                elementId: _getElementId(enclosing),
+                libraryUri: enclosing.library.source.uri.toString(),
+                location: _locationFromNode(node),
+                type: ReferenceType.invocation,
+                packageName: packageName,
+                isImplicit: true,
+              ),
+            );
+          }
         }
+      } catch (_) {
+        // Some element types don't support enclosingElement3
       }
     }
 
@@ -176,8 +213,12 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       _trackElementUsage(element, node);
 
       // Also track the class being instantiated
-      final classElement = element.enclosingElement3;
-      _trackElementUsage(classElement, node);
+      try {
+        final classElement = element.enclosingElement3;
+        _trackElementUsage(classElement, node);
+      } catch (_) {
+        // Some element types don't support enclosingElement3
+      }
     }
 
     super.visitInstanceCreationExpression(node);
@@ -200,12 +241,16 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       _trackElementUsage(element, node);
 
       // Check for extension property usage
-      final enclosing = element.enclosingElement3;
-      if (enclosing is ExtensionElement) {
-        final extensionName = enclosing.name;
-        if (extensionName != null) {
-          usedExtensions.add(extensionName);
+      try {
+        final enclosing = element.enclosingElement3;
+        if (enclosing is ExtensionElement) {
+          final extensionName = enclosing.name;
+          if (extensionName != null) {
+            usedExtensions.add(extensionName);
+          }
         }
+      } catch (_) {
+        // Some element types don't support enclosingElement3
       }
     }
 
@@ -267,16 +312,40 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
 
   /// Track element usage with full semantic information.
   void _trackElementUsage(Element element, AstNode node) {
+    // Skip prefix elements (import prefixes like 'as foo')
+    // They don't have a valid library and cause type cast errors
+    if (element is PrefixElement) {
+      return;
+    }
+
     final elementId = _getElementId(element);
     usedElementIds.add(elementId);
 
     // Also add the simple name for backward compatibility
     usedElementIds.add(element.name ?? '');
 
-    // Track import usage
-    final libraryUri = element.library?.source.uri.toString();
-    if (libraryUri != null && _imports.containsKey(libraryUri)) {
-      _markSymbolUsed(libraryUri, element.name ?? '');
+    // Track import usage - find which import provides this element
+    String? libraryUri;
+    try {
+      libraryUri = element.library?.source.uri.toString();
+    } catch (_) {
+      // Some element types don't support library property
+    }
+
+    if (libraryUri != null) {
+      // Check if any import provides access to this library
+      final importUris = _libraryToImports[libraryUri];
+      if (importUris != null && importUris.isNotEmpty) {
+        // Mark the symbol as used in all imports that provide it
+        for (final importUri in importUris) {
+          _markSymbolUsed(importUri, element.name ?? '');
+        }
+      } else {
+        // Fallback: direct match (for dart: imports and relative imports)
+        if (_imports.containsKey(libraryUri)) {
+          _markSymbolUsed(libraryUri, element.name ?? '');
+        }
+      }
     }
 
     // Create semantic reference
@@ -295,28 +364,41 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
   String _getElementId(Element element) {
     final parts = <String>[];
 
-    // Add library URI
-    final library = element.library;
-    if (library != null) {
-      parts.add(library.source.uri.toString());
-    }
-
-    // Add enclosing elements
-    Element? current = element.enclosingElement3;
-    final enclosingNames = <String>[];
-    while (current != null && current is! LibraryElement) {
-      final name = current.name;
-      if (name != null && name.isNotEmpty) {
-        enclosingNames.insert(0, name);
+    try {
+      // Add library URI
+      final library = element.library;
+      if (library != null) {
+        parts.add(library.source.uri.toString());
       }
-      current = current.enclosingElement3;
-    }
-    parts.addAll(enclosingNames);
 
-    // Add element name
-    final name = element.name;
-    if (name != null && name.isNotEmpty) {
-      parts.add(name);
+      // Add enclosing elements
+      // Note: enclosingElement3 can throw for certain element types
+      try {
+        Element? current = element.enclosingElement3;
+        final enclosingNames = <String>[];
+        while (current != null && current is! LibraryElement) {
+          final name = current.name;
+          if (name != null && name.isNotEmpty) {
+            enclosingNames.insert(0, name);
+          }
+          current = current.enclosingElement3;
+        }
+        parts.addAll(enclosingNames);
+      } catch (_) {
+        // Some element types don't support enclosingElement3
+      }
+
+      // Add element name
+      final name = element.name;
+      if (name != null && name.isNotEmpty) {
+        parts.add(name);
+      }
+    } catch (_) {
+      // Fallback to just the element name
+      final name = element.name;
+      if (name != null && name.isNotEmpty) {
+        return name;
+      }
     }
 
     return parts.join('::');
@@ -329,6 +411,22 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       importUsage[uri] = existing.copyWith(
         usedSymbols: {...existing.usedSymbols, symbolName},
       );
+    }
+  }
+
+  /// Recursively collect all libraries exported by a library.
+  void _collectExportedLibraries(
+    LibraryElement library,
+    Set<String> collected,
+    Set<LibraryElement> visited,
+  ) {
+    if (visited.contains(library)) return;
+    visited.add(library);
+
+    for (final exported in library.exportedLibraries) {
+      collected.add(exported.source.uri.toString());
+      // Recursively collect transitive exports
+      _collectExportedLibraries(exported, collected, visited);
     }
   }
 

@@ -329,7 +329,7 @@ class UnusedDetector {
         issues.add(
           CodeIssue(
             category: IssueCategory.unusedImport,
-            severity: IssueSeverity.info,
+            severity: IssueSeverity.warning,
             symbol: unusedImport.displayName,
             location: unusedImport.location,
             message: "Import '${unusedImport.uri}' is never used",
@@ -345,7 +345,7 @@ class UnusedDetector {
           issues.add(
             CodeIssue(
               category: IssueCategory.unusedImport,
-              severity: IssueSeverity.info,
+              severity: IssueSeverity.warning,
               symbol: partial.uri,
               location: partial.location,
               message: partial.message,
@@ -363,7 +363,7 @@ class UnusedDetector {
         issues.add(
           CodeIssue(
             category: IssueCategory.unusedImport,
-            severity: IssueSeverity.info,
+            severity: IssueSeverity.warning,
             symbol: unusedImport.displayName,
             location: unusedImport.location,
             message: "Import '${unusedImport.uri}' is never used",
@@ -567,9 +567,10 @@ class UnusedDetector {
       case IssueCategory.unusedMethod:
         return IssueSeverity.warning;
       case IssueCategory.unusedParameter:
-      case IssueCategory.unusedImport:
       case IssueCategory.unusedVariable:
         return IssueSeverity.info;
+      case IssueCategory.unusedImport:
+        return IssueSeverity.warning;
       default:
         return IssueSeverity.warning;
     }

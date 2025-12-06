@@ -132,6 +132,26 @@ void main() {
       expect(unusedExtensions, contains('UnusedStringExtension'));
     });
 
+    test('reports unused imports at warning severity by default', () async {
+      final config = CodeScanConfig(
+        rootPath: fixtureRoot,
+        minSeverity: IssueSeverity.warning,
+      );
+
+      final analyzer = CodeAnalyzer(config: config, logger: logger);
+      final result = await analyzer.analyze();
+
+      final unusedImports = result.issues
+          .where((i) => i.category == IssueCategory.unusedImport)
+          .toList();
+
+      expect(unusedImports, isNotEmpty);
+      expect(
+        unusedImports.every((i) => i.severity == IssueSeverity.warning),
+        isTrue,
+      );
+    });
+
     test('generates statistics', () async {
       final config = CodeScanConfig(
         rootPath: fixtureRoot,

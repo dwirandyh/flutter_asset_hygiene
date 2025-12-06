@@ -114,13 +114,12 @@ class SemanticAnalyzer {
         usedExtensions.addAll(result.usedExtensions);
         diRegistrations.addAll(result.diRegistrations);
 
-        // Merge import usage
+        // Add import usage with file-specific keys to track per-file usage
+        // This ensures unused imports are detected per file, not globally
         for (final entry in result.importUsage.entries) {
-          importUsage.update(
-            entry.key,
-            (existing) => existing.merge(entry.value),
-            ifAbsent: () => entry.value,
-          );
+          // Use filePath:uri as key to track per-file import usage
+          final key = '${result.filePath}:${entry.key}';
+          importUsage[key] = entry.value;
         }
       }
     }
@@ -184,22 +183,22 @@ class SemanticAnalyzer {
     for (final package in packages) {
       logger.debug('Analyzing package semantically: ${package.name}');
 
-      final collection = await analyzeDirectory(
-        package.path,
-        packageName: package.name,
-      );
-
-      allReferences.addAll(collection.references);
-      allUsedElements.addAll(collection.usedElementIds);
-      allUsedExtensions.addAll(collection.usedExtensions);
-      allDiRegistrations.addAll(collection.diRegistrations);
-
-      for (final entry in collection.importUsage.entries) {
-        allImportUsage.update(
-          entry.key,
-          (existing) => existing.merge(entry.value),
-          ifAbsent: () => entry.value,
+      try {
+        final collection = await analyzeDirectory(
+          package.path,
+          packageName: package.name,
         );
+
+        allReferences.addAll(collection.references);
+        allUsedElements.addAll(collection.usedElementIds);
+        allUsedExtensions.addAll(collection.usedExtensions);
+        allDiRegistrations.addAll(collection.diRegistrations);
+
+        // Import usage is already keyed by filePath:uri from analyzeDirectory
+        // Just add them directly without merging
+        allImportUsage.addAll(collection.importUsage);
+      } catch (e) {
+        logger.warning('Error analyzing package ${package.name}: $e');
       }
     }
 
@@ -300,7 +299,9 @@ class SemanticReferenceCollection {
       if (info.usedSymbols.isEmpty && !info.isUsedImplicitly) {
         result.add(
           UnusedImportInfo(
-            uri: entry.key,
+            // Use the actual URI from ImportUsageInfo, not the key
+            // (key is filePath:uri for uniqueness)
+            uri: info.uri,
             location: info.location,
             prefix: info.prefix,
           ),
@@ -313,14 +314,9 @@ class SemanticReferenceCollection {
 
   /// Merge with another collection.
   SemanticReferenceCollection merge(SemanticReferenceCollection other) {
+    // Import usage is keyed by filePath:uri, so just combine them
     final mergedImportUsage = Map<String, ImportUsageInfo>.from(importUsage);
-    for (final entry in other.importUsage.entries) {
-      mergedImportUsage.update(
-        entry.key,
-        (existing) => existing.merge(entry.value),
-        ifAbsent: () => entry.value,
-      );
-    }
+    mergedImportUsage.addAll(other.importUsage);
 
     return SemanticReferenceCollection(
       references: [...references, ...other.references],
