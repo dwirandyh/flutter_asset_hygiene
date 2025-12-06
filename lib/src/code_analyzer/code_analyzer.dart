@@ -183,12 +183,18 @@ class CodeAnalyzer {
   }
 
   /// Run semantic analysis on multiple packages.
+  ///
+  /// [workspaceRoot] - Optional workspace root for consistent path reporting.
   Future<_SemanticAnalysisResult> _runSemanticAnalysisForPackages(
-    List<PackageInfo> packages,
-  ) async {
+    List<PackageInfo> packages, {
+    String? workspaceRoot,
+  }) async {
     try {
       _semanticAnalyzer ??= SemanticAnalyzer(config: config, logger: logger);
-      final refs = await _semanticAnalyzer!.analyzePackages(packages);
+      final refs = await _semanticAnalyzer!.analyzePackages(
+        packages,
+        workspaceRoot: workspaceRoot,
+      );
 
       // Run DI detection if enabled
       DIDetectionResult? diResult;
@@ -233,17 +239,71 @@ class CodeAnalyzer {
     // Collect all packages
     final packages = <PackageInfo>[];
 
+    // Build exclude patterns for ALL sub-packages from root scan to avoid duplicates.
+    // Each sub-package will be scanned separately, so we must exclude them from root.
+    // Also collect absolute paths of excluded packages for nested package detection.
+    final subPackageExcludePatterns = <String>[];
+    final excludedAbsolutePaths = <String>[];
+    for (final pkg in workspace.packages) {
+      // Get relative path from root to package
+      final relativePath = p.relative(pkg.path, from: config.rootPath);
+      // Exclude ALL sub-packages from root scan to prevent duplicate declarations
+      subPackageExcludePatterns.add('**/$relativePath/**');
+      subPackageExcludePatterns.add('$relativePath/**');
+
+      // Track excluded packages for nested package detection
+      if (config.monorepo.excludePackages.contains(pkg.name)) {
+        excludedAbsolutePaths.add(p.normalize(pkg.path));
+      }
+    }
+
+    // Helper to check if a package is nested inside an excluded package
+    bool isNestedInExcludedPackage(String packagePath) {
+      final normalizedPath = p.normalize(packagePath);
+      for (final excludedPath in excludedAbsolutePaths) {
+        if (normalizedPath.startsWith('$excludedPath/') ||
+            normalizedPath.startsWith('$excludedPath${p.separator}')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     // Add root package if it has Dart code
     final rootLibPath = p.join(config.rootPath, 'lib');
     if (Directory(rootLibPath).existsSync()) {
       packages.add(
-        PackageInfo(name: workspace.name, path: config.rootPath, isRoot: true),
+        PackageInfo(
+          name: workspace.name,
+          path: config.rootPath,
+          isRoot: true,
+          additionalExcludePatterns: subPackageExcludePatterns,
+        ),
       );
       packagePaths[workspace.name] = config.rootPath;
     }
 
-    // Add workspace packages
+    // Add workspace packages (filtering excluded packages)
     for (final pkg in workspace.packages) {
+      // Skip packages that are in the exclude list
+      if (config.monorepo.excludePackages.contains(pkg.name)) {
+        logger.debug('Skipping excluded package: ${pkg.name}');
+        continue;
+      }
+
+      // Skip packages that are nested inside an excluded package
+      if (isNestedInExcludedPackage(pkg.path)) {
+        logger.debug('Skipping package nested in excluded path: ${pkg.name}');
+        continue;
+      }
+
+      // If include list is specified, only include those packages
+      if (config.monorepo.includePackages.isNotEmpty &&
+          !config.monorepo.includePackages.contains(pkg.name)) {
+        logger.debug('Skipping non-included package: ${pkg.name}');
+        continue;
+      }
+
       packages.add(PackageInfo(name: pkg.name, path: pkg.path));
       packagePaths[pkg.name] = pkg.path;
     }
@@ -251,13 +311,19 @@ class CodeAnalyzer {
     // Phase 1: Collect all declarations from all packages
     logger.debug('Phase 1: Collecting declarations from all packages...');
     final symbolCollector = SymbolCollector(config: config, logger: logger);
-    final symbols = await symbolCollector.collectFromPackages(packages);
+    final symbols = await symbolCollector.collectFromPackages(
+      packages,
+      workspaceRoot: config.rootPath,
+    );
     logger.debug('Found ${symbols.declarations.length} total declarations');
 
     // Phase 2: Resolve all references from all packages
     logger.debug('Phase 2: Resolving references from all packages...');
     final referenceResolver = ReferenceResolver(config: config, logger: logger);
-    final references = await referenceResolver.resolveFromPackages(packages);
+    final references = await referenceResolver.resolveFromPackages(
+      packages,
+      workspaceRoot: config.rootPath,
+    );
     logger.debug('Found ${references.references.length} total references');
 
     // Phase 2.5: Semantic analysis (if enabled)
@@ -266,7 +332,10 @@ class CodeAnalyzer {
 
     if (useSemanticAnalysis) {
       logger.debug('Phase 2.5: Running semantic analysis...');
-      final semanticResult = await _runSemanticAnalysisForPackages(packages);
+      final semanticResult = await _runSemanticAnalysisForPackages(
+        packages,
+        workspaceRoot: config.rootPath,
+      );
       semanticRefs = semanticResult.references;
       diResult = semanticResult.diResult;
 
@@ -321,10 +390,49 @@ class CodeAnalyzer {
       return _analyzeSingleProject(stopwatch);
     }
 
-    // Collect all packages for reference resolution
+    // Collect absolute paths of excluded packages for nested package detection
+    final excludedAbsolutePaths = <String>[];
+    for (final pkg in workspace.packages) {
+      if (config.monorepo.excludePackages.contains(pkg.name)) {
+        excludedAbsolutePaths.add(p.normalize(pkg.path));
+      }
+    }
+
+    // Helper to check if a package is nested inside an excluded package
+    bool isNestedInExcludedPackage(String packagePath) {
+      final normalizedPath = p.normalize(packagePath);
+      for (final excludedPath in excludedAbsolutePaths) {
+        if (normalizedPath.startsWith('$excludedPath/') ||
+            normalizedPath.startsWith('$excludedPath${p.separator}')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Collect all packages for reference resolution (filtering excluded packages)
     final packages = <PackageInfo>[];
 
     for (final pkg in workspace.packages) {
+      // Skip packages that are in the exclude list
+      if (config.monorepo.excludePackages.contains(pkg.name)) {
+        logger.debug('Skipping excluded package: ${pkg.name}');
+        continue;
+      }
+
+      // Skip packages that are nested inside an excluded package
+      if (isNestedInExcludedPackage(pkg.path)) {
+        logger.debug('Skipping package nested in excluded path: ${pkg.name}');
+        continue;
+      }
+
+      // If include list is specified, only include those packages
+      if (config.monorepo.includePackages.isNotEmpty &&
+          !config.monorepo.includePackages.contains(pkg.name)) {
+        logger.debug('Skipping non-included package: ${pkg.name}');
+        continue;
+      }
+
       packages.add(PackageInfo(name: pkg.name, path: pkg.path));
       packagePaths[pkg.name] = pkg.path;
     }
@@ -332,12 +440,18 @@ class CodeAnalyzer {
     // Collect declarations only from target package
     logger.debug('Collecting declarations from target package...');
     final symbolCollector = SymbolCollector(config: config, logger: logger);
-    final targetSymbols = await symbolCollector.collect(config.rootPath);
+    final targetSymbols = await symbolCollector.collect(
+      config.rootPath,
+      workspaceRoot: workspaceRoot,
+    );
 
     // Resolve references from ALL packages (for cross-package detection)
     logger.debug('Resolving references from all packages...');
     final referenceResolver = ReferenceResolver(config: config, logger: logger);
-    final allReferences = await referenceResolver.resolveFromPackages(packages);
+    final allReferences = await referenceResolver.resolveFromPackages(
+      packages,
+      workspaceRoot: workspaceRoot,
+    );
 
     // Semantic analysis (if enabled)
     SemanticReferenceCollection? semanticRefs;
@@ -345,7 +459,10 @@ class CodeAnalyzer {
 
     if (useSemanticAnalysis) {
       logger.debug('Running semantic analysis...');
-      final semanticResult = await _runSemanticAnalysisForPackages(packages);
+      final semanticResult = await _runSemanticAnalysisForPackages(
+        packages,
+        workspaceRoot: workspaceRoot,
+      );
       semanticRefs = semanticResult.references;
       diResult = semanticResult.diResult;
     }

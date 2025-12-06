@@ -19,15 +19,29 @@ class ReferenceResolver {
   ReferenceResolver({required this.config, required this.logger});
 
   /// Resolve all references from a directory
+  ///
+  /// [directoryPath] - The directory to scan (package path)
+  /// [workspaceRoot] - Optional workspace root for consistent path reporting.
+  ///                   If provided, file paths will be relative to this root.
+  ///                   If not provided, defaults to directoryPath.
   Future<ReferenceCollection> resolve(
     String directoryPath, {
     String? packageName,
+    List<String> additionalExcludePatterns = const [],
+    String? workspaceRoot,
   }) async {
     final references = <CodeReference>[];
     final referencedIdentifiers = <String>{};
     final referencedTypes = <String>{};
     final usedImports = <String>{};
     final unusedImports = <UnusedImportInfo>[];
+    final effectiveWorkspaceRoot = workspaceRoot ?? directoryPath;
+
+    // Combine config exclude patterns with additional patterns
+    final effectivePatterns = [
+      ...config.excludePatterns,
+      ...additionalExcludePatterns,
+    ];
 
     // Find all Dart files
     // Include generated files when resolving references because generated code
@@ -36,14 +50,18 @@ class ReferenceResolver {
       directoryPath,
       includeTests: config.includeTests,
       includeGenerated: true,
-      excludePatterns: config
-          .excludePatterns, // Don't use effectiveExcludePatterns to include generated
+      excludePatterns:
+          effectivePatterns, // Don't use effectiveExcludePatterns to include generated
     );
 
     logger.debug('Resolving references in ${dartFiles.length} files');
 
     for (final file in dartFiles) {
-      final result = await _resolveFromFile(file, directoryPath, packageName);
+      final result = await _resolveFromFile(
+        file,
+        effectiveWorkspaceRoot,
+        packageName,
+      );
       if (result != null) {
         references.addAll(result.references);
         referencedIdentifiers.addAll(result.referencedIdentifiers);
@@ -66,12 +84,12 @@ class ReferenceResolver {
   /// Resolve references from a single file
   Future<FileReferenceResult?> _resolveFromFile(
     File file,
-    String projectRoot,
+    String workspaceRoot,
     String? packageName,
   ) async {
     try {
       final content = await file.readAsString();
-      final relativePath = p.relative(file.path, from: projectRoot);
+      final relativePath = p.relative(file.path, from: workspaceRoot);
 
       final parseResult = parseString(content: content);
 
@@ -115,9 +133,13 @@ class ReferenceResolver {
   }
 
   /// Resolve references from multiple packages
+  ///
+  /// [workspaceRoot] - Optional workspace root for consistent path reporting.
+  ///                   If provided, all file paths will be relative to this root.
   Future<ReferenceCollection> resolveFromPackages(
-    List<PackageInfo> packages,
-  ) async {
+    List<PackageInfo> packages, {
+    String? workspaceRoot,
+  }) async {
     final allReferences = <CodeReference>[];
     final allIdentifiers = <String>{};
     final allTypes = <String>{};
@@ -127,7 +149,12 @@ class ReferenceResolver {
     for (final package in packages) {
       logger.debug('Resolving references in package: ${package.name}');
 
-      final collection = await resolve(package.path, packageName: package.name);
+      final collection = await resolve(
+        package.path,
+        packageName: package.name,
+        additionalExcludePatterns: package.additionalExcludePatterns,
+        workspaceRoot: workspaceRoot,
+      );
 
       allReferences.addAll(collection.references);
       allIdentifiers.addAll(collection.referencedIdentifiers);

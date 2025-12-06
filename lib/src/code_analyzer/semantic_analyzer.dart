@@ -86,15 +86,21 @@ class SemanticAnalyzer {
   }
 
   /// Analyze a directory and collect semantic references.
+  ///
+  /// [workspaceRoot] - Optional workspace root for consistent path reporting.
+  ///                   If provided, file paths will be relative to this root.
+  ///                   If not provided, defaults to directoryPath.
   Future<SemanticReferenceCollection> analyzeDirectory(
     String directoryPath, {
     String? packageName,
+    String? workspaceRoot,
   }) async {
     final references = <SemanticReference>[];
     final usedElements = <String>{};
     final usedExtensions = <String>{};
     final importUsage = <String, ImportUsageInfo>{};
     final diRegistrations = <DIRegistration>[];
+    final effectiveWorkspaceRoot = workspaceRoot ?? directoryPath;
 
     // Find all Dart files
     final dartFiles = await FileUtils.findDartFiles(
@@ -107,7 +113,11 @@ class SemanticAnalyzer {
     logger.debug('Analyzing ${dartFiles.length} files semantically');
 
     for (final file in dartFiles) {
-      final result = await _analyzeFile(file, directoryPath, packageName);
+      final result = await _analyzeFile(
+        file,
+        effectiveWorkspaceRoot,
+        packageName,
+      );
       if (result != null) {
         references.addAll(result.references);
         usedElements.addAll(result.usedElementIds);
@@ -167,9 +177,13 @@ class SemanticAnalyzer {
   }
 
   /// Analyze multiple packages (for monorepo support).
+  ///
+  /// [workspaceRoot] - Optional workspace root for consistent path reporting.
+  ///                   If provided, all file paths will be relative to this root.
   Future<SemanticReferenceCollection> analyzePackages(
-    List<PackageInfo> packages,
-  ) async {
+    List<PackageInfo> packages, {
+    String? workspaceRoot,
+  }) async {
     final allReferences = <SemanticReference>[];
     final allUsedElements = <String>{};
     final allUsedExtensions = <String>{};
@@ -187,6 +201,7 @@ class SemanticAnalyzer {
         final collection = await analyzeDirectory(
           package.path,
           packageName: package.name,
+          workspaceRoot: workspaceRoot,
         );
 
         allReferences.addAll(collection.references);
