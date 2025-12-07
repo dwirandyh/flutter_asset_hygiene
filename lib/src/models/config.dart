@@ -104,7 +104,8 @@ class ScanConfig {
 enum OutputFormat {
   console,
   json,
-  csv;
+  csv,
+  html;
 
   static OutputFormat fromString(String value) {
     switch (value.toLowerCase()) {
@@ -112,6 +113,8 @@ enum OutputFormat {
         return OutputFormat.json;
       case 'csv':
         return OutputFormat.csv;
+      case 'html':
+        return OutputFormat.html;
       default:
         return OutputFormat.console;
     }
