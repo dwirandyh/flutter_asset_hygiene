@@ -46,9 +46,11 @@ class ReferenceResolver {
     // Find all Dart files
     // Include generated files when resolving references because generated code
     // legitimately references declared symbols (e.g., widgetbook, freezed, etc.)
+    // ALWAYS include test files for reference resolution to avoid false positives
+    // on test-only code (e.g., createForTesting methods used only in tests)
     final dartFiles = await FileUtils.findDartFiles(
       directoryPath,
-      includeTests: config.includeTests,
+      includeTests: true, // Always include tests for reference resolution
       includeGenerated: true,
       excludePatterns:
           effectivePatterns, // Don't use effectiveExcludePatterns to include generated

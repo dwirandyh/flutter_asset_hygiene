@@ -62,7 +62,9 @@ void main() {
       final servicesPath = p.join(tempDir.path, 'lib', 'src', 'services.dart');
       final servicesContent = await File(servicesPath).readAsString();
 
-      expect(servicesContent, isNot(contains('dart:async')));
+      // Note: Unused imports are not auto-fixed (canAutoFix: false)
+      // because import removal is error-prone. Use `dart fix` for imports.
+      // expect(servicesContent, isNot(contains('dart:async')));
       expect(servicesContent, isNot(contains('_unusedMethod')));
       expect(servicesContent, isNot(contains('unusedGetter')));
       expect(servicesContent, isNot(contains('UnusedStringExtension')));

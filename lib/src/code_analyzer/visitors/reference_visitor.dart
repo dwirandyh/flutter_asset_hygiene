@@ -270,6 +270,78 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
   }
 
   @override
+  void visitBinaryExpression(BinaryExpression node) {
+    // Track operator usage (e.g., a + b uses operator+)
+    // This is important for classes that define custom operators
+    final operatorName = 'operator${node.operator.lexeme}';
+    referencedIdentifiers.add(operatorName);
+
+    // Also track the simple operator token for matching
+    referencedIdentifiers.add(node.operator.lexeme);
+
+    // Semantic mode: track the actual operator element
+    if (hasSemanticInfo) {
+      final element = node.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+      }
+    }
+
+    super.visitBinaryExpression(node);
+  }
+
+  @override
+  void visitIndexExpression(IndexExpression node) {
+    // Track operator[] usage
+    referencedIdentifiers.add('operator[]');
+    referencedIdentifiers.add('[]');
+
+    // Semantic mode: track the actual operator element
+    if (hasSemanticInfo) {
+      final element = node.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+      }
+    }
+
+    super.visitIndexExpression(node);
+  }
+
+  @override
+  void visitPrefixExpression(PrefixExpression node) {
+    // Track prefix operator usage (e.g., -a, !a, ++a)
+    final operatorName = 'operator${node.operator.lexeme}';
+    referencedIdentifiers.add(operatorName);
+
+    // Semantic mode: track the actual operator element
+    if (hasSemanticInfo) {
+      final element = node.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+      }
+    }
+
+    super.visitPrefixExpression(node);
+  }
+
+  @override
+  void visitPostfixExpression(PostfixExpression node) {
+    // Track postfix operator usage (e.g., a++, a--)
+    final operatorName = 'operator${node.operator.lexeme}';
+    referencedIdentifiers.add(operatorName);
+
+    // Semantic mode: track the actual operator element
+    if (hasSemanticInfo) {
+      final element = node.staticElement;
+      if (element != null) {
+        _trackElementUsage(element, node);
+      }
+    }
+
+    super.visitPostfixExpression(node);
+  }
+
+  @override
   void visitFunctionDeclaration(FunctionDeclaration node) {
     _currentParameters.clear();
     _usedParameters.clear();
@@ -319,18 +391,50 @@ class ReferenceVisitor extends RecursiveAstVisitor<void> {
     _currentParameters.clear();
     _usedParameters.clear();
 
-    // Collect parameters
+    // Collect parameters and track field formal parameters as field references
     for (final param in node.parameters.parameters) {
       final name = _getParameterName(param);
       if (name != null) {
         _currentParameters.add(name);
       }
+
+      // Track field formal parameters (this.fieldName) as references to fields
+      // This is crucial - fields used in constructors via this.fieldName ARE used
+      _trackFieldFormalParameter(param);
     }
 
     super.visitConstructorDeclaration(node);
 
     _currentParameters.clear();
     _usedParameters.clear();
+  }
+
+  /// Track field formal parameters (this.fieldName) as references to fields
+  void _trackFieldFormalParameter(FormalParameter param) {
+    FieldFormalParameter? fieldParam;
+
+    if (param is FieldFormalParameter) {
+      fieldParam = param;
+    } else if (param is DefaultFormalParameter) {
+      final inner = param.parameter;
+      if (inner is FieldFormalParameter) {
+        fieldParam = inner;
+      }
+    }
+
+    if (fieldParam != null) {
+      final fieldName = fieldParam.name.lexeme;
+      // Mark the field as referenced - it's used in the constructor!
+      referencedIdentifiers.add(fieldName);
+
+      final reference = CodeReference(
+        elementId: fieldName,
+        location: _locationFromNode(fieldParam),
+        type: ReferenceType.assignment,
+        packageName: packageName,
+      );
+      references.add(reference);
+    }
   }
 
   @override

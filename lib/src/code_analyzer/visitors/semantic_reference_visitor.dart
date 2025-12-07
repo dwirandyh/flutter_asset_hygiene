@@ -14,6 +14,7 @@ import '../semantic_analyzer.dart';
 /// - Tracks extension method usage (implicit calls)
 /// - Detects DI registrations
 /// - Provides granular import usage tracking
+/// - Handles part/part-of files correctly (shared imports)
 class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
   /// Collected semantic references
   final List<SemanticReference> references = [];
@@ -54,12 +55,35 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
   /// Map of library URI to import URIs that provide access to it
   final Map<String, Set<String>> _libraryToImports = {};
 
+  /// Whether this file is a part file (has `part of` directive)
+  bool isPartFile = false;
+
+  /// The library file path if this is a part file
+  String? libraryFilePath;
+
   SemanticReferenceVisitor({
     required this.filePath,
     required this.resolvedUnit,
     required this.logger,
     this.packageName,
   });
+
+  @override
+  void visitPartOfDirective(PartOfDirective node) {
+    isPartFile = true;
+    // Extract the library path from the part-of directive
+    final uri = node.uri?.stringValue;
+    if (uri != null) {
+      libraryFilePath = uri;
+    } else if (node.libraryName != null) {
+      // part of library_name; - we can't easily resolve this
+      libraryFilePath = null;
+    }
+    logger.debug(
+      'Found part-of directive in $filePath, library: $libraryFilePath',
+    );
+    super.visitPartOfDirective(node);
+  }
 
   @override
   void visitImportDirective(ImportDirective node) {
@@ -308,6 +332,105 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       _trackElementUsage(element, node);
     }
     super.visitFunctionExpressionInvocation(node);
+  }
+
+  @override
+  void visitBinaryExpression(BinaryExpression node) {
+    // Track operator usage (e.g., a + b uses operator+)
+    final element = node.staticElement;
+    if (element != null) {
+      _trackElementUsage(element, node);
+    }
+
+    // Also track the operator name for AST fallback
+    final operatorName = 'operator${node.operator.lexeme}';
+    usedElementIds.add(operatorName);
+    usedElementIds.add(node.operator.lexeme);
+
+    super.visitBinaryExpression(node);
+  }
+
+  @override
+  void visitIndexExpression(IndexExpression node) {
+    // Track operator[] usage
+    final element = node.staticElement;
+    if (element != null) {
+      _trackElementUsage(element, node);
+    }
+
+    usedElementIds.add('operator[]');
+    usedElementIds.add('[]');
+
+    super.visitIndexExpression(node);
+  }
+
+  @override
+  void visitPrefixExpression(PrefixExpression node) {
+    // Track prefix operator usage (e.g., -a, !a, ++a)
+    final element = node.staticElement;
+    if (element != null) {
+      _trackElementUsage(element, node);
+    }
+
+    final operatorName = 'operator${node.operator.lexeme}';
+    usedElementIds.add(operatorName);
+
+    super.visitPrefixExpression(node);
+  }
+
+  @override
+  void visitPostfixExpression(PostfixExpression node) {
+    // Track postfix operator usage (e.g., a++, a--)
+    final element = node.staticElement;
+    if (element != null) {
+      _trackElementUsage(element, node);
+    }
+
+    final operatorName = 'operator${node.operator.lexeme}';
+    usedElementIds.add(operatorName);
+
+    super.visitPostfixExpression(node);
+  }
+
+  @override
+  void visitConstructorDeclaration(ConstructorDeclaration node) {
+    // Track field formal parameters (this.fieldName) as references to fields
+    // This is crucial - fields used in constructors via this.fieldName ARE used
+    for (final param in node.parameters.parameters) {
+      _trackFieldFormalParameter(param, node);
+    }
+    super.visitConstructorDeclaration(node);
+  }
+
+  /// Track field formal parameters (this.fieldName) as references to fields
+  void _trackFieldFormalParameter(FormalParameter param, AstNode context) {
+    FieldFormalParameter? fieldParam;
+
+    if (param is FieldFormalParameter) {
+      fieldParam = param;
+    } else if (param is DefaultFormalParameter) {
+      final inner = param.parameter;
+      if (inner is FieldFormalParameter) {
+        fieldParam = inner;
+      }
+    }
+
+    if (fieldParam != null) {
+      final fieldName = fieldParam.name.lexeme;
+
+      // Track the field element if available (semantic mode)
+      final element = fieldParam.declaredElement;
+      if (element is FieldFormalParameterElement) {
+        // The field element itself - mark the field as used
+        final fieldElement = element.field;
+        if (fieldElement != null) {
+          _trackElementUsage(fieldElement, fieldParam);
+        }
+      }
+
+      // Also add the simple field name to usedElementIds for AST fallback
+      usedElementIds.add(fieldName);
+    }
   }
 
   /// Track element usage with full semantic information.

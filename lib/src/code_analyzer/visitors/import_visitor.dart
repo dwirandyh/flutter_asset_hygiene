@@ -11,12 +11,19 @@ import '../../models/code_element.dart';
 /// Supports two modes:
 /// - AST-only mode (default): Basic unused import detection
 /// - Semantic mode: Per-symbol usage tracking for show/hide combinators
+///
+/// Handles part/part-of files:
+/// - Part files share imports with their library file
+/// - Imports in library files used by any part are considered used
 class ImportVisitor extends RecursiveAstVisitor<void> {
   /// All import directives found
   final List<ImportInfo> imports = [];
 
   /// All export directives found
   final List<ExportInfo> exports = [];
+
+  /// All part directives found (for tracking library's parts)
+  final List<String> partFiles = [];
 
   /// Set of identifiers used in the file (excluding imports)
   final Set<String> usedIdentifiers = {};
@@ -35,6 +42,12 @@ class ImportVisitor extends RecursiveAstVisitor<void> {
 
   /// Map of prefix to import URI
   final Map<String, String> _prefixToUri = {};
+
+  /// Whether this file is a part file (has `part of` directive)
+  bool isPartFile = false;
+
+  /// The library URI if this is a part file
+  String? partOfLibrary;
 
   ImportVisitor({required this.filePath, this.packageName, this.resolvedUnit});
 
@@ -114,6 +127,28 @@ class ImportVisitor extends RecursiveAstVisitor<void> {
     );
 
     super.visitExportDirective(node);
+  }
+
+  @override
+  void visitPartDirective(PartDirective node) {
+    final uri = node.uri.stringValue ?? '';
+    if (uri.isNotEmpty) {
+      partFiles.add(uri);
+    }
+    super.visitPartDirective(node);
+  }
+
+  @override
+  void visitPartOfDirective(PartOfDirective node) {
+    isPartFile = true;
+    // Extract the library path from the part-of directive
+    final uri = node.uri?.stringValue;
+    if (uri != null) {
+      partOfLibrary = uri;
+    }
+    // Note: For `part of library_name;` syntax, we can't easily resolve
+    // the library path without additional context
+    super.visitPartOfDirective(node);
   }
 
   @override
@@ -267,6 +302,18 @@ class ImportVisitor extends RecursiveAstVisitor<void> {
   bool _isImportUnused(ImportInfo import) {
     // dart:core is always used implicitly
     if (import.uri == 'dart:core') {
+      return false;
+    }
+
+    // If this file has part files, imports might be used by parts
+    // Don't report as unused without checking all parts
+    if (partFiles.isNotEmpty) {
+      return false;
+    }
+
+    // If this is a part file, imports are defined in the library file
+    // Part files don't have their own imports, so skip
+    if (isPartFile) {
       return false;
     }
 

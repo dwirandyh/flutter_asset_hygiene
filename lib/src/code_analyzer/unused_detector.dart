@@ -32,11 +32,21 @@ class UnusedDetector {
   }) {
     final issues = <CodeIssue>[];
 
+    // Build inheritance hierarchy for interface/implementation tracking
+    final inheritanceMap = _buildInheritanceMap(symbols);
+
+    // Build abstract method to implementations mapping
+    final abstractMethodImpls = _buildAbstractMethodImplementations(
+      symbols,
+      inheritanceMap,
+    );
+
     // Create enhanced reference checker
     final refChecker = _ReferenceChecker(
       references: references,
       semanticReferences: semanticReferences,
       diTypes: diTypes ?? {},
+      abstractMethodImplementations: abstractMethodImpls,
     );
 
     // Detect unused classes
@@ -175,6 +185,11 @@ class UnusedDetector {
         continue;
       }
 
+      // Skip test-only functions (likely used in tests)
+      if (_isTestingElement(function.name)) {
+        continue;
+      }
+
       // Check if referenced (using enhanced checker)
       if (!refChecker.isReferenced(function.name)) {
         issues.add(
@@ -212,9 +227,24 @@ class UnusedDetector {
       ...symbols.byType(CodeElementType.constructor),
     ];
 
+    // Build a set of interface/abstract method names that have implementations
+    // An override method "uses" the abstract method it implements
+    final implementedMethods = <String>{};
+    for (final member in members) {
+      if (member.isOverride) {
+        implementedMethods.add(member.name);
+      }
+    }
+
     for (final member in members) {
       // Skip overrides if configured
       if (config.excludeOverrides && member.isOverride) {
+        continue;
+      }
+
+      // Skip abstract methods - they define interface contracts
+      // They are "used" by their implementations
+      if (member.isAbstract) {
         continue;
       }
 
@@ -243,9 +273,25 @@ class UnusedDetector {
         continue;
       }
 
+      // Skip test-only members (likely used in tests)
+      if (_isTestingElement(member.name)) {
+        continue;
+      }
+
+      // Skip operator methods - they are called implicitly via operator syntax
+      // e.g., `a + b` calls `operator+` on a
+      if (_isOperatorMethod(member.name)) {
+        continue;
+      }
+
       // Check if referenced (using enhanced checker)
-      if (!refChecker.isReferenced(member.name) &&
-          !refChecker.isReferenced(member.qualifiedName)) {
+      // For operators, also check with 'operator' prefix
+      final isReferenced =
+          refChecker.isReferenced(member.name) ||
+          refChecker.isReferenced(member.qualifiedName) ||
+          refChecker.isReferenced('operator${member.name}');
+
+      if (!isReferenced) {
         final category = _getCategoryForMember(member.type);
 
         issues.add(
@@ -257,7 +303,7 @@ class UnusedDetector {
             message: _getMessageForUnusedMember(member),
             suggestion: _getSuggestionForUnused(member),
             codeSnippet: _getCodeSnippet(member),
-            canAutoFix: !member.isOverride,
+            canAutoFix: !member.isOverride && !member.isAbstract,
             packageName: member.packageName,
           ),
         );
@@ -334,7 +380,10 @@ class UnusedDetector {
             location: unusedImport.location,
             message: "Import '${unusedImport.uri}' is never used",
             suggestion: 'Remove the unused import',
-            canAutoFix: true,
+            // NOTE: Auto-fix for imports is disabled because offset tracking
+            // becomes invalid after other code in the same file is modified.
+            // Use `dart fix` or IDE to remove unused imports after running --fix.
+            canAutoFix: false,
           ),
         );
       }
@@ -350,7 +399,7 @@ class UnusedDetector {
               location: partial.location,
               message: partial.message,
               suggestion: partial.suggestion,
-              canAutoFix: true,
+              canAutoFix: false,
             ),
           );
         }
@@ -368,7 +417,7 @@ class UnusedDetector {
             location: unusedImport.location,
             message: "Import '${unusedImport.uri}' is never used",
             suggestion: 'Remove the unused import',
-            canAutoFix: true,
+            canAutoFix: false,
           ),
         );
       }
@@ -414,6 +463,9 @@ class UnusedDetector {
       'singleton',
       'lazySingleton',
       'riverpod',
+      // Test-related
+      'testOnly',
+      'TestOnly',
     ];
 
     for (final annotation in element.annotations) {
@@ -426,6 +478,26 @@ class UnusedDetector {
       }
     }
     return false;
+  }
+
+  /// Check if element name suggests it's for testing purposes
+  bool _isTestingElement(String name) {
+    // Common patterns for test-only code
+    return name.endsWith('ForTesting') ||
+        name.endsWith('ForTest') ||
+        name.startsWith('test') ||
+        name.startsWith('mock') ||
+        name.startsWith('fake') ||
+        name.startsWith('stub') ||
+        name.contains('Mock') ||
+        name.contains('Fake') ||
+        name.contains('Stub') ||
+        name.contains('ForTesting') ||
+        name.contains('ForTest') ||
+        name == 'createForTesting' ||
+        name == 'resetInstance' ||
+        name == 'resetForTesting' ||
+        name == 'setUpForTesting';
   }
 
   bool _isLifecycleMethod(String name) {
@@ -451,9 +523,46 @@ class UnusedDetector {
       'toString',
       'hashCode',
       'operator==',
+      '==',
       'noSuchMethod',
     };
     return lifecycleMethods.contains(name);
+  }
+
+  /// Check if a method is an operator method
+  /// Operator methods are called implicitly via operator syntax (e.g., a + b)
+  bool _isOperatorMethod(String name) {
+    // Dart operator method names
+    const operators = {
+      // Arithmetic
+      '+',
+      '-',
+      '*',
+      '/',
+      '~/',
+      '%',
+      // Unary
+      'unary-',
+      // Relational
+      '<',
+      '>',
+      '<=',
+      '>=',
+      // Equality (already in lifecycle methods but include for completeness)
+      '==',
+      // Bitwise
+      '&',
+      '|',
+      '^',
+      '~',
+      '<<',
+      '>>',
+      '>>>',
+      // Index
+      '[]',
+      '[]=',
+    };
+    return operators.contains(name);
   }
 
   IssueCategory _getCategoryForType(CodeElementType type) {
@@ -584,6 +693,211 @@ class UnusedDetector {
     ];
     return order.indexOf(severity) >= order.indexOf(minimum);
   }
+
+  /// Build a map of class name -> all parent types (superclass, interfaces, mixins)
+  Map<String, Set<String>> _buildInheritanceMap(SymbolCollection symbols) {
+    final inheritanceMap = <String, Set<String>>{};
+
+    for (final cls in symbols.classes) {
+      final parents = <String>{};
+
+      if (cls.superclassName != null) {
+        parents.add(cls.superclassName!);
+      }
+      parents.addAll(cls.implementedInterfaces);
+      parents.addAll(cls.mixins);
+
+      inheritanceMap[cls.name] = parents;
+    }
+
+    // Resolve transitive inheritance (if A extends B and B extends C, A should know about C)
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (final entry in inheritanceMap.entries) {
+        final className = entry.key;
+        final parents = entry.value;
+        final newParents = <String>{};
+
+        for (final parent in parents) {
+          final grandParents = inheritanceMap[parent];
+          if (grandParents != null) {
+            for (final gp in grandParents) {
+              if (!parents.contains(gp)) {
+                newParents.add(gp);
+                changed = true;
+              }
+            }
+          }
+        }
+
+        if (newParents.isNotEmpty) {
+          inheritanceMap[className] = {...parents, ...newParents};
+        }
+      }
+    }
+
+    return inheritanceMap;
+  }
+
+  /// Build a map of abstract method name -> list of implementing method qualified names
+  ///
+  /// This allows us to mark implementation methods as used when their abstract
+  /// counterpart is referenced via the interface.
+  ///
+  /// Also tracks non-abstract methods in abstract classes that are overridden
+  /// (common in plugin platform interface pattern where base methods throw
+  /// UnimplementedError).
+  Map<String, Set<String>> _buildAbstractMethodImplementations(
+    SymbolCollection symbols,
+    Map<String, Set<String>> inheritanceMap,
+  ) {
+    final abstractMethodImpls = <String, Set<String>>{};
+
+    // Collect all abstract classes
+    final abstractClasses = <String>{};
+    for (final cls in symbols.classes) {
+      if (cls.isAbstract) {
+        abstractClasses.add(cls.name);
+      }
+    }
+
+    // First, collect all abstract methods from abstract classes/interfaces
+    // Also collect non-abstract methods in abstract classes (they may be
+    // meant to be overridden - e.g., methods that throw UnimplementedError)
+    final abstractMethods =
+        <String, Set<String>>{}; // className -> method names
+    final overridableMethods =
+        <String, Set<String>>{}; // abstract class name -> method names
+
+    for (final method in symbols.methods) {
+      if (method.parentName == null) continue;
+
+      if (method.isAbstract) {
+        abstractMethods
+            .putIfAbsent(method.parentName!, () => {})
+            .add(method.name);
+      } else if (abstractClasses.contains(method.parentName)) {
+        // Non-abstract method in an abstract class - could be an overridable
+        // interface method (e.g., platform interface pattern)
+        overridableMethods
+            .putIfAbsent(method.parentName!, () => {})
+            .add(method.name);
+      }
+    }
+
+    // Also collect getters/setters that are abstract or in abstract classes
+    for (final getter in symbols.byType(CodeElementType.getter)) {
+      if (getter.parentName == null) continue;
+
+      if (getter.isAbstract) {
+        abstractMethods
+            .putIfAbsent(getter.parentName!, () => {})
+            .add(getter.name);
+      } else if (abstractClasses.contains(getter.parentName)) {
+        overridableMethods
+            .putIfAbsent(getter.parentName!, () => {})
+            .add(getter.name);
+      }
+    }
+    for (final setter in symbols.byType(CodeElementType.setter)) {
+      if (setter.parentName == null) continue;
+
+      if (setter.isAbstract) {
+        abstractMethods
+            .putIfAbsent(setter.parentName!, () => {})
+            .add(setter.name);
+      } else if (abstractClasses.contains(setter.parentName)) {
+        overridableMethods
+            .putIfAbsent(setter.parentName!, () => {})
+            .add(setter.name);
+      }
+    }
+
+    // Now, for each concrete class, find which methods it implements/overrides
+    for (final cls in symbols.classes) {
+      if (cls.isAbstract) continue; // Skip abstract classes
+
+      final parents = inheritanceMap[cls.name] ?? {};
+
+      for (final parent in parents) {
+        // Check abstract methods
+        final parentAbstractMethods = abstractMethods[parent];
+        if (parentAbstractMethods != null) {
+          _mapMethodImplementations(
+            symbols,
+            cls.name,
+            parent,
+            parentAbstractMethods,
+            abstractMethodImpls,
+          );
+        }
+
+        // Check overridable methods in abstract classes
+        // These are methods that have bodies but are meant to be overridden
+        final parentOverridableMethods = overridableMethods[parent];
+        if (parentOverridableMethods != null) {
+          _mapMethodImplementations(
+            symbols,
+            cls.name,
+            parent,
+            parentOverridableMethods,
+            abstractMethodImpls,
+            requireOverride: true, // Only count if marked with @override
+          );
+        }
+      }
+    }
+
+    logger.debug(
+      'Built abstract method implementations map with ${abstractMethodImpls.length} entries',
+    );
+
+    return abstractMethodImpls;
+  }
+
+  /// Helper to map method implementations from a parent class to a child class
+  void _mapMethodImplementations(
+    SymbolCollection symbols,
+    String childClassName,
+    String parentClassName,
+    Set<String> methodNames,
+    Map<String, Set<String>> implMap, {
+    bool requireOverride = false,
+  }) {
+    for (final methodName in methodNames) {
+      // Find the implementation in the child class
+      final impl = symbols.declarations.where(
+        (d) =>
+            d.parentName == childClassName &&
+            d.name == methodName &&
+            !d.isAbstract &&
+            (d.type == CodeElementType.method ||
+                d.type == CodeElementType.getter ||
+                d.type == CodeElementType.setter) &&
+            (!requireOverride || d.isOverride),
+      );
+
+      if (impl.isNotEmpty) {
+        // Map: "ParentClass.methodName" -> {"ConcreteClass.methodName", ...}
+        final abstractKey = '$parentClassName.$methodName';
+        implMap
+            .putIfAbsent(abstractKey, () => {})
+            .add('$childClassName.$methodName');
+
+        // Also map by just method name for simpler lookups
+        implMap
+            .putIfAbsent(methodName, () => {})
+            .add('$childClassName.$methodName');
+
+        // IMPORTANT: Also add reverse mapping so when the abstract/base
+        // method is referenced, the implementations are considered used,
+        // AND vice versa - when an implementation is found, the base
+        // method should be considered used too
+        implMap.putIfAbsent(abstractKey, () => {}).add(abstractKey);
+      }
+    }
+  }
 }
 
 /// Helper class for checking references with both AST and semantic data.
@@ -592,16 +906,116 @@ class _ReferenceChecker {
   final SemanticReferenceCollection? semanticReferences;
   final Set<String> diTypes;
 
-  const _ReferenceChecker({
+  /// Map of abstract method -> implementing methods
+  /// Used to mark implementations as used when abstract method is called via interface
+  final Map<String, Set<String>> abstractMethodImplementations;
+
+  /// Cache of implementation methods that are considered used
+  /// because their abstract counterpart is referenced
+  late final Set<String> _usedImplementations;
+
+  /// Cache of base class methods that are considered used
+  /// because they have implementations that are referenced or exist
+  late final Set<String> _usedBaseMethods;
+
+  _ReferenceChecker({
     required this.references,
     this.semanticReferences,
     required this.diTypes,
-  });
+    this.abstractMethodImplementations = const {},
+  }) {
+    _usedImplementations = _buildUsedImplementations();
+    _usedBaseMethods = _buildUsedBaseMethods();
+  }
+
+  /// Build set of implementation method names that are used
+  /// because their abstract method is referenced
+  Set<String> _buildUsedImplementations() {
+    final used = <String>{};
+
+    for (final entry in abstractMethodImplementations.entries) {
+      final abstractMethod = entry.key;
+      final implementations = entry.value;
+
+      // Check if the abstract method is referenced
+      // This handles both "InterfaceName.methodName" and just "methodName"
+      final isAbstractReferenced =
+          references.isReferenced(abstractMethod) ||
+          (semanticReferences?.usedElementIds.contains(abstractMethod) ??
+              false);
+
+      // Also check if just the method name part is referenced
+      final methodNameOnly = abstractMethod.contains('.')
+          ? abstractMethod.split('.').last
+          : abstractMethod;
+      final isMethodNameReferenced = references.isReferenced(methodNameOnly);
+
+      if (isAbstractReferenced || isMethodNameReferenced) {
+        // Mark all implementations as used
+        used.addAll(implementations);
+        // Also add just the method names
+        for (final impl in implementations) {
+          if (impl.contains('.')) {
+            used.add(impl.split('.').last);
+          }
+        }
+      }
+    }
+
+    return used;
+  }
+
+  /// Build set of base class method names that are considered used
+  /// because they are part of an interface contract (have implementations)
+  Set<String> _buildUsedBaseMethods() {
+    final used = <String>{};
+
+    for (final entry in abstractMethodImplementations.entries) {
+      final baseMethod = entry.key;
+      final implementations = entry.value;
+
+      // A base method is "used" if it has any implementations
+      // This handles the plugin platform interface pattern where base methods
+      // throw UnimplementedError but are meant to be overridden
+      if (implementations.isNotEmpty) {
+        used.add(baseMethod);
+
+        // Also add just the method name for simpler lookups
+        if (baseMethod.contains('.')) {
+          // But only if this is a qualified name (ClassName.methodName)
+          // to avoid false positives
+          final methodNameOnly = baseMethod.split('.').last;
+          // Check if any implementation is actually referenced
+          for (final impl in implementations) {
+            if (references.isReferenced(impl) ||
+                references.isReferenced(methodNameOnly) ||
+                (semanticReferences?.usedElementIds.contains(impl) ?? false)) {
+              used.add(methodNameOnly);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return used;
+  }
 
   /// Check if an identifier is referenced.
   bool isReferenced(String identifier) {
     // Check DI types first
     if (diTypes.contains(identifier)) {
+      return true;
+    }
+
+    // Check if this is an implementation of an abstract method that's used
+    if (_usedImplementations.contains(identifier)) {
+      return true;
+    }
+
+    // Check if this is a base class method that has implementations
+    // (part of an interface contract - e.g., platform interface pattern)
+    if (_usedBaseMethods.contains(identifier)) {
       return true;
     }
 

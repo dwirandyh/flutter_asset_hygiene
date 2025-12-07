@@ -433,8 +433,11 @@ class UnusedCodeCommand extends Command<int> {
       return;
     }
 
+    final deletedMsg = fixResult.filesDeleted > 0
+        ? ', deleted ${fixResult.filesDeleted} file(s)'
+        : '';
     logger.success(
-      'Auto-fix applied: removed ${fixResult.totalIssues} issue(s) across ${fixResult.filesChanged} file(s).',
+      'Auto-fix applied: removed ${fixResult.totalIssues} issue(s) across ${fixResult.filesChanged} file(s)$deletedMsg.',
     );
     if (fixResult.skippedIssues.isNotEmpty) {
       logger.warning(

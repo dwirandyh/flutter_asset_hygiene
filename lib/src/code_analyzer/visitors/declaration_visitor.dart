@@ -18,26 +18,45 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
   /// Current class/mixin/extension being visited
   String? _currentParent;
 
+  /// Whether the current parent class is abstract
+  bool _currentParentIsAbstract = false;
+
   DeclarationVisitor({required this.filePath, this.packageName});
 
   @override
   void visitClassDeclaration(ClassDeclaration node) {
     final annotations = _extractAnnotations(node.metadata);
+    final isAbstract = node.abstractKeyword != null;
+
+    // Extract inheritance information
+    final superclassName = node.extendsClause?.superclass.name2.lexeme;
+    final implementedInterfaces =
+        node.implementsClause?.interfaces.map((i) => i.name2.lexeme).toList() ??
+        [];
+    final mixins =
+        node.withClause?.mixinTypes.map((m) => m.name2.lexeme).toList() ?? [];
+
     final element = CodeElement(
       name: node.name.lexeme,
       type: CodeElementType.classDeclaration,
       location: _locationFromNode(node),
       isPublic: !node.name.lexeme.startsWith('_'),
+      isAbstract: isAbstract,
       annotations: annotations,
       documentation: _extractDocumentation(node),
       packageName: packageName,
+      superclassName: superclassName,
+      implementedInterfaces: implementedInterfaces,
+      mixins: mixins,
     );
     declarations.add(element);
 
     // Visit class members
     _currentParent = node.name.lexeme;
+    _currentParentIsAbstract = isAbstract;
     super.visitClassDeclaration(node);
     _currentParent = null;
+    _currentParentIsAbstract = false;
   }
 
   @override
@@ -171,17 +190,37 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
   @override
   void visitTopLevelVariableDeclaration(TopLevelVariableDeclaration node) {
     final annotations = _extractAnnotations(node.metadata);
-    for (final variable in node.variables.variables) {
+    final variables = node.variables.variables;
+
+    // If there's only one variable, use the full declaration node's location
+    // This ensures we capture 'final', 'var', 'const', and the semicolon
+    if (variables.length == 1) {
+      final variable = variables.first;
       final element = CodeElement(
         name: variable.name.lexeme,
         type: CodeElementType.topLevelVariable,
-        location: _locationFromNode(variable),
+        location: _locationFromNode(node), // Use node, not variable
         isPublic: !variable.name.lexeme.startsWith('_'),
         annotations: annotations,
         documentation: _extractDocumentation(node),
         packageName: packageName,
       );
       declarations.add(element);
+    } else {
+      // Multiple variables in one declaration - use individual variable locations
+      // but this is less accurate for deletion
+      for (final variable in variables) {
+        final element = CodeElement(
+          name: variable.name.lexeme,
+          type: CodeElementType.topLevelVariable,
+          location: _locationFromNode(variable),
+          isPublic: !variable.name.lexeme.startsWith('_'),
+          annotations: annotations,
+          documentation: _extractDocumentation(node),
+          packageName: packageName,
+        );
+        declarations.add(element);
+      }
     }
     super.visitTopLevelVariableDeclaration(node);
   }
@@ -195,8 +234,9 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
     final ctorName = node.name?.lexeme ?? '';
     // For unnamed constructors, we still want a usable name; use the class name.
     final elementName = ctorName.isEmpty ? _currentParent! : ctorName;
-    final parameterParentName =
-        ctorName.isEmpty ? _currentParent! : '$_currentParent.$ctorName';
+    final parameterParentName = ctorName.isEmpty
+        ? _currentParent!
+        : '$_currentParent.$ctorName';
     final isOverride = _hasOverrideAnnotation(node.metadata);
 
     final element = CodeElement(
@@ -204,7 +244,8 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
       type: CodeElementType.constructor,
       location: _locationFromNode(node),
       // Public if neither the class nor the constructor name is private
-      isPublic: !elementName.startsWith('_') && !_currentParent!.startsWith('_'),
+      isPublic:
+          !elementName.startsWith('_') && !_currentParent!.startsWith('_'),
       isOverride: isOverride,
       parentName: _currentParent,
       annotations: _extractAnnotations(node.metadata),
@@ -233,6 +274,9 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
     }
 
     final isOverride = _hasOverrideAnnotation(node.metadata);
+    // A method is abstract if it has no body (just a semicolon) in an abstract class
+    final isAbstract =
+        node.body is EmptyFunctionBody && _currentParentIsAbstract;
 
     final element = CodeElement(
       name: node.name.lexeme,
@@ -241,6 +285,7 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
       isPublic: !node.name.lexeme.startsWith('_'),
       isStatic: node.isStatic,
       isOverride: isOverride,
+      isAbstract: isAbstract,
       parentName: _currentParent,
       annotations: _extractAnnotations(node.metadata),
       documentation: _extractDocumentation(node),
@@ -261,11 +306,16 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
     if (_currentParent == null) return;
 
     final annotations = _extractAnnotations(node.metadata);
-    for (final variable in node.fields.variables) {
+    final variables = node.fields.variables;
+
+    // If there's only one field, use the full declaration node's location
+    // This ensures we capture 'final', 'static', type annotations, and the semicolon
+    if (variables.length == 1) {
+      final variable = variables.first;
       final element = CodeElement(
         name: variable.name.lexeme,
         type: CodeElementType.field,
-        location: _locationFromNode(variable),
+        location: _locationFromNode(node), // Use node, not variable
         isPublic: !variable.name.lexeme.startsWith('_'),
         isStatic: node.isStatic,
         parentName: _currentParent,
@@ -274,6 +324,22 @@ class DeclarationVisitor extends RecursiveAstVisitor<void> {
         packageName: packageName,
       );
       declarations.add(element);
+    } else {
+      // Multiple fields in one declaration - use individual variable locations
+      for (final variable in variables) {
+        final element = CodeElement(
+          name: variable.name.lexeme,
+          type: CodeElementType.field,
+          location: _locationFromNode(variable),
+          isPublic: !variable.name.lexeme.startsWith('_'),
+          isStatic: node.isStatic,
+          parentName: _currentParent,
+          annotations: annotations,
+          documentation: _extractDocumentation(node),
+          packageName: packageName,
+        );
+        declarations.add(element);
+      }
     }
     super.visitFieldDeclaration(node);
   }

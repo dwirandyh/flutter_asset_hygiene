@@ -18,6 +18,9 @@ class CodeElement {
   /// Whether the element has @override annotation
   final bool isOverride;
 
+  /// Whether the element is abstract (abstract class/method)
+  final bool isAbstract;
+
   /// Package name (for monorepo support)
   final String? packageName;
 
@@ -33,6 +36,15 @@ class CodeElement {
   /// Whether this element is exported
   final bool isExported;
 
+  /// Superclass name (for classes that extend another class)
+  final String? superclassName;
+
+  /// Implemented interface names
+  final List<String> implementedInterfaces;
+
+  /// Mixed-in mixin names
+  final List<String> mixins;
+
   const CodeElement({
     required this.name,
     required this.type,
@@ -40,11 +52,15 @@ class CodeElement {
     this.isPublic = true,
     this.isStatic = false,
     this.isOverride = false,
+    this.isAbstract = false,
     this.packageName,
     this.parentName,
     this.annotations = const [],
     this.documentation,
     this.isExported = false,
+    this.superclassName,
+    this.implementedInterfaces = const [],
+    this.mixins = const [],
   });
 
   /// Unique identifier for this element
@@ -82,11 +98,15 @@ class CodeElement {
     bool? isPublic,
     bool? isStatic,
     bool? isOverride,
+    bool? isAbstract,
     String? packageName,
     String? parentName,
     List<String>? annotations,
     String? documentation,
     bool? isExported,
+    String? superclassName,
+    List<String>? implementedInterfaces,
+    List<String>? mixins,
   }) {
     return CodeElement(
       name: name ?? this.name,
@@ -95,11 +115,16 @@ class CodeElement {
       isPublic: isPublic ?? this.isPublic,
       isStatic: isStatic ?? this.isStatic,
       isOverride: isOverride ?? this.isOverride,
+      isAbstract: isAbstract ?? this.isAbstract,
       packageName: packageName ?? this.packageName,
       parentName: parentName ?? this.parentName,
       annotations: annotations ?? this.annotations,
       documentation: documentation ?? this.documentation,
       isExported: isExported ?? this.isExported,
+      superclassName: superclassName ?? this.superclassName,
+      implementedInterfaces:
+          implementedInterfaces ?? this.implementedInterfaces,
+      mixins: mixins ?? this.mixins,
     );
   }
 
@@ -110,11 +135,16 @@ class CodeElement {
     'isPublic': isPublic,
     'isStatic': isStatic,
     'isOverride': isOverride,
+    'isAbstract': isAbstract,
     if (packageName != null) 'packageName': packageName,
     if (parentName != null) 'parentName': parentName,
     'annotations': annotations,
     if (documentation != null) 'documentation': documentation,
     'isExported': isExported,
+    if (superclassName != null) 'superclassName': superclassName,
+    if (implementedInterfaces.isNotEmpty)
+      'implementedInterfaces': implementedInterfaces,
+    if (mixins.isNotEmpty) 'mixins': mixins,
   };
 
   @override

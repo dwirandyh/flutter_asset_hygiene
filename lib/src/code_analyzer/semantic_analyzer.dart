@@ -103,14 +103,23 @@ class SemanticAnalyzer {
     final effectiveWorkspaceRoot = workspaceRoot ?? directoryPath;
 
     // Find all Dart files
+    // ALWAYS include test files for reference resolution to avoid false positives
+    // on test-only code (e.g., createForTesting methods used only in tests)
     final dartFiles = await FileUtils.findDartFiles(
       directoryPath,
-      includeTests: config.includeTests,
+      includeTests: true, // Always include tests for reference resolution
       includeGenerated: false,
       excludePatterns: config.effectiveExcludePatterns,
     );
 
     logger.debug('Analyzing ${dartFiles.length} files semantically');
+
+    // First pass: analyze all files and collect results
+    final allResults = <String, FileSemanticResult>{};
+
+    // Track part-library relationships
+    final partToLibrary = <String, String>{}; // part file -> library file
+    final libraryParts = <String, List<String>>{}; // library file -> part files
 
     for (final file in dartFiles) {
       final result = await _analyzeFile(
@@ -119,18 +128,58 @@ class SemanticAnalyzer {
         packageName,
       );
       if (result != null) {
+        allResults[result.filePath] = result;
         references.addAll(result.references);
         usedElements.addAll(result.usedElementIds);
         usedExtensions.addAll(result.usedExtensions);
         diRegistrations.addAll(result.diRegistrations);
 
-        // Add import usage with file-specific keys to track per-file usage
-        // This ensures unused imports are detected per file, not globally
-        for (final entry in result.importUsage.entries) {
-          // Use filePath:uri as key to track per-file import usage
-          final key = '${result.filePath}:${entry.key}';
-          importUsage[key] = entry.value;
+        // Track part file relationships
+        if (result.isPartFile && result.libraryFilePath != null) {
+          // Resolve library path relative to part file's directory
+          final partDir = p.dirname(result.filePath);
+          final libraryPath = p.normalize(
+            p.join(partDir, result.libraryFilePath!),
+          );
+          partToLibrary[result.filePath] = libraryPath;
+          libraryParts.putIfAbsent(libraryPath, () => []).add(result.filePath);
         }
+      }
+    }
+
+    // Second pass: aggregate import usage, considering part files
+    for (final entry in allResults.entries) {
+      final result = entry.value;
+
+      // Skip part files - their usage will be aggregated into library file
+      if (result.isPartFile) {
+        continue;
+      }
+
+      // For library files, aggregate usage from all parts
+      final partFiles = libraryParts[result.filePath] ?? [];
+
+      for (final importEntry in result.importUsage.entries) {
+        var usage = importEntry.value;
+
+        // Aggregate usage from part files
+        for (final partPath in partFiles) {
+          final partResult = allResults[partPath];
+          if (partResult != null) {
+            // Part files don't have their own imports, but they use symbols
+            // from the library's imports. Merge the used elements.
+            usage = usage.copyWith(
+              usedSymbols: {...usage.usedSymbols, ...partResult.usedElementIds},
+              isUsedImplicitly:
+                  usage.isUsedImplicitly ||
+                  partResult.usedElementIds.isNotEmpty,
+            );
+          }
+        }
+
+        // Use filePath:uri as key to track per-file import usage
+        final key = '${result.filePath}:${importEntry.key}';
+        importUsage[key] = usage;
       }
     }
 
@@ -173,6 +222,8 @@ class SemanticAnalyzer {
       usedExtensions: visitor.usedExtensions,
       importUsage: visitor.importUsage,
       diRegistrations: visitor.diRegistrations,
+      isPartFile: visitor.isPartFile,
+      libraryFilePath: visitor.libraryFilePath,
     );
   }
 
@@ -352,6 +403,12 @@ class FileSemanticResult {
   final Map<String, ImportUsageInfo> importUsage;
   final List<DIRegistration> diRegistrations;
 
+  /// Whether this file is a part file (has `part of` directive)
+  final bool isPartFile;
+
+  /// The library file path if this is a part file
+  final String? libraryFilePath;
+
   const FileSemanticResult({
     required this.filePath,
     required this.references,
@@ -359,6 +416,8 @@ class FileSemanticResult {
     required this.usedExtensions,
     required this.importUsage,
     required this.diRegistrations,
+    this.isPartFile = false,
+    this.libraryFilePath,
   });
 }
 

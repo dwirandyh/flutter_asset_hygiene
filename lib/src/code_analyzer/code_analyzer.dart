@@ -304,6 +304,13 @@ class CodeAnalyzer {
         continue;
       }
 
+      // Skip packages that match exclude patterns (e.g., packages/design_system/**/*)
+      final relativePath = p.relative(pkg.path, from: config.rootPath);
+      if (_matchesExcludePatterns(relativePath, config.excludePatterns)) {
+        logger.debug('Skipping package matching exclude pattern: ${pkg.name}');
+        continue;
+      }
+
       packages.add(PackageInfo(name: pkg.name, path: pkg.path));
       packagePaths[pkg.name] = pkg.path;
     }
@@ -433,6 +440,13 @@ class CodeAnalyzer {
         continue;
       }
 
+      // Skip packages that match exclude patterns
+      final relativePath = p.relative(pkg.path, from: workspaceRoot);
+      if (_matchesExcludePatterns(relativePath, config.excludePatterns)) {
+        logger.debug('Skipping package matching exclude pattern: ${pkg.name}');
+        continue;
+      }
+
       packages.add(PackageInfo(name: pkg.name, path: pkg.path));
       packagePaths[pkg.name] = pkg.path;
     }
@@ -497,6 +511,62 @@ class CodeAnalyzer {
   void dispose() {
     _semanticAnalyzer?.dispose();
     _semanticAnalyzer = null;
+  }
+
+  /// Check if a path matches any of the exclude patterns.
+  bool _matchesExcludePatterns(String path, List<String> patterns) {
+    for (final pattern in patterns) {
+      if (_matchesGlobPattern(path, pattern)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Simple glob pattern matching.
+  bool _matchesGlobPattern(String path, String pattern) {
+    // Normalize the pattern - remove trailing slashes and wildcards for directory matching
+    var normalizedPattern = pattern;
+
+    // Handle patterns like "packages/design_system/**/*" or "packages/design_system/**"
+    if (normalizedPattern.endsWith('/**/*')) {
+      normalizedPattern = normalizedPattern.substring(
+        0,
+        normalizedPattern.length - 5,
+      );
+    } else if (normalizedPattern.endsWith('/**')) {
+      normalizedPattern = normalizedPattern.substring(
+        0,
+        normalizedPattern.length - 3,
+      );
+    } else if (normalizedPattern.endsWith('/*')) {
+      normalizedPattern = normalizedPattern.substring(
+        0,
+        normalizedPattern.length - 2,
+      );
+    }
+
+    // Check if path starts with the pattern (directory match)
+    if (path == normalizedPattern ||
+        path.startsWith('$normalizedPattern/') ||
+        path.startsWith('$normalizedPattern${p.separator}')) {
+      return true;
+    }
+
+    // Handle patterns starting with **/ (match anywhere)
+    if (pattern.startsWith('**/')) {
+      final suffix = pattern.substring(3);
+      // Remove trailing wildcards
+      var cleanSuffix = suffix;
+      if (cleanSuffix.endsWith('/**/*')) {
+        cleanSuffix = cleanSuffix.substring(0, cleanSuffix.length - 5);
+      } else if (cleanSuffix.endsWith('/**')) {
+        cleanSuffix = cleanSuffix.substring(0, cleanSuffix.length - 3);
+      }
+      return path.contains(cleanSuffix);
+    }
+
+    return false;
   }
 }
 

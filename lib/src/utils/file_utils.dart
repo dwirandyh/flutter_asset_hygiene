@@ -20,31 +20,78 @@ class FileUtils {
       return files;
     }
 
-    await for (final entity in root.list(recursive: true)) {
-      if (entity is! File) continue;
-
-      final relativePath = p.relative(entity.path, from: rootPath);
-      final normalizedPath = relativePath.replaceAll('\\', '/');
-
-      // Skip non-Dart files
-      if (!normalizedPath.endsWith('.dart')) continue;
-
-      // Skip test files if not included
-      if (!includeTests && _isTestFile(normalizedPath)) continue;
-
-      // Skip generated files if not included
-      if (!includeGenerated && _isGeneratedFile(normalizedPath)) continue;
-
-      // Skip files matching exclude patterns
-      if (_matchesExcludePattern(normalizedPath, excludePatterns)) continue;
-
-      // Skip build directories
-      if (_isBuildDirectory(normalizedPath)) continue;
-
-      files.add(entity);
-    }
+    // Use a manual traversal to skip excluded directories early
+    // This avoids permission errors when trying to list excluded directories
+    await _findDartFilesRecursive(
+      root,
+      rootPath,
+      files,
+      includeTests: includeTests,
+      includeGenerated: includeGenerated,
+      excludePatterns: excludePatterns,
+    );
 
     return files;
+  }
+
+  /// Recursively find Dart files, skipping excluded directories early
+  static Future<void> _findDartFilesRecursive(
+    Directory dir,
+    String rootPath,
+    List<File> files, {
+    required bool includeTests,
+    required bool includeGenerated,
+    required List<String> excludePatterns,
+  }) async {
+    try {
+      await for (final entity in dir.list(followLinks: false)) {
+        final relativePath = p.relative(entity.path, from: rootPath);
+        final normalizedPath = relativePath.replaceAll('\\', '/');
+
+        // Skip excluded directories early (before recursing into them)
+        if (entity is Directory) {
+          // Check if this directory should be skipped
+          if (_isBuildDirectory(normalizedPath) ||
+              _isBuildDirectory('$normalizedPath/') ||
+              _matchesExcludePattern(normalizedPath, excludePatterns) ||
+              _matchesExcludePattern('$normalizedPath/', excludePatterns)) {
+            continue;
+          }
+
+          // Recurse into non-excluded directories
+          await _findDartFilesRecursive(
+            entity,
+            rootPath,
+            files,
+            includeTests: includeTests,
+            includeGenerated: includeGenerated,
+            excludePatterns: excludePatterns,
+          );
+          continue;
+        }
+
+        if (entity is! File) continue;
+
+        // Skip non-Dart files
+        if (!normalizedPath.endsWith('.dart')) continue;
+
+        // Skip test files if not included
+        if (!includeTests && _isTestFile(normalizedPath)) continue;
+
+        // Skip generated files if not included
+        if (!includeGenerated && _isGeneratedFile(normalizedPath)) continue;
+
+        // Skip files matching exclude patterns
+        if (_matchesExcludePattern(normalizedPath, excludePatterns)) continue;
+
+        // Skip build directories (double-check for files)
+        if (_isBuildDirectory(normalizedPath)) continue;
+
+        files.add(entity);
+      }
+    } on FileSystemException {
+      // Silently skip directories with permission issues
+    }
   }
 
   /// Find all asset files in a directory
@@ -110,7 +157,7 @@ class FileUtils {
         path.contains('/.dart_tool/');
   }
 
-  /// Check if path is in a build directory or SDK directory
+  /// Check if path is in a build directory, SDK directory, or symlink directory
   static bool _isBuildDirectory(String path) {
     return path.contains('/build/') ||
         path.contains('/.dart_tool/') ||
@@ -118,9 +165,16 @@ class FileUtils {
         path.contains('/.pub-cache/') ||
         path.contains('/.pub/') ||
         path.contains('/flutter_sdk/') ||
+        path.contains('/.symlinks/') ||
+        path.contains('/ios/.symlinks/') ||
+        path.contains('/macos/.symlinks/') ||
+        path.contains('/.plugin_symlinks/') ||
         path.startsWith('build/') ||
         path.startsWith('.dart_tool/') ||
-        path.startsWith('.fvm/');
+        path.startsWith('.fvm/') ||
+        path.startsWith('ios/.symlinks/') ||
+        path.startsWith('macos/.symlinks/') ||
+        path.startsWith('.symlinks/');
   }
 
   /// Check if path matches any exclude pattern
