@@ -150,6 +150,13 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
           _libraryToImports.putIfAbsent(libUri, () => {}).add(uri);
         }
       }
+    } else {
+      // Fallback: if importElement is null (e.g., package not resolved),
+      // use the import URI directly as the library URI
+      // This ensures prefixed imports are tracked even without full resolution
+      _importToLibraries[uri] = {uri};
+      _libraryToImports.putIfAbsent(uri, () => {}).add(uri);
+      logger.debug('Import element is null for $uri, using fallback mapping');
     }
 
     super.visitImportDirective(node);
@@ -179,10 +186,16 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
     }
 
     // Track prefix usage for import tracking
+    // This is crucial for patterns like: prefix.ClassName.staticMethod()
+    // e.g., intl.Intl.canonicalizedLocale(locale)
     final prefix = node.prefix.name;
     if (_importPrefixes.containsKey(prefix)) {
       final uri = _importPrefixes[prefix]!;
       _markSymbolUsed(uri, node.identifier.name);
+
+      // Also mark the import as implicitly used when prefix is accessed
+      // This handles cases where the element can't be resolved but prefix is used
+      _markImportAsUsed(uri);
     }
 
     super.visitPrefixedIdentifier(node);
@@ -253,6 +266,18 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
     final element = node.element;
     if (element != null) {
       _trackElementUsage(element, node);
+    }
+
+    // Track prefixed type usage (e.g., intl.Intl, math.Random)
+    // This ensures imports with prefixes are marked as used
+    final importPrefix = node.importPrefix;
+    if (importPrefix != null) {
+      final prefix = importPrefix.name.lexeme;
+      if (_importPrefixes.containsKey(prefix)) {
+        final uri = _importPrefixes[prefix]!;
+        _markSymbolUsed(uri, node.name2.lexeme);
+        _markImportAsUsed(uri);
+      }
     }
 
     super.visitNamedType(node);
@@ -534,6 +559,16 @@ class SemanticReferenceVisitor extends RecursiveAstVisitor<void> {
       importUsage[uri] = existing.copyWith(
         usedSymbols: {...existing.usedSymbols, symbolName},
       );
+    }
+  }
+
+  /// Mark an import as implicitly used (e.g., when prefix is accessed).
+  /// This is important for patterns like prefix.ClassName.staticMethod()
+  /// where the import prefix is used even if individual symbols can't be tracked.
+  void _markImportAsUsed(String uri) {
+    final existing = importUsage[uri];
+    if (existing != null && !existing.isUsedImplicitly) {
+      importUsage[uri] = existing.copyWith(isUsedImplicitly: true);
     }
   }
 
